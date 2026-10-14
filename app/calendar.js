@@ -295,7 +295,7 @@ export class CalendarWorkspace {
         }
         const next = clone(this.data); const index = next.events.findIndex(item => item.id === candidate.id);
         if (index < 0) next.events.push(candidate); else next.events[index] = candidate; validateCalendar(next);
-        this.data = next; persistForm(); this.formDirty = false; this.cache(); await this.save(); this.formEventId = null; dialog.close(); this.render(); this.parent.querySelector('#calendar-add-event')?.focus();
+        this.data = next; persistForm(); this.formDirty = false; this.cache(); await this.save(); this.formEventId = null; try { localStorage.removeItem('fieldnotes-calendar-form'); } catch { /* optional cache */ } dialog.close(); this.render(); this.parent.querySelector('#calendar-add-event')?.focus();
       } catch (e) { error.textContent = e.message; this.updateStatus(); }
       finally { submit.disabled = false; Object.values(fields).forEach(input => { input.disabled = false; }); dialog.querySelector('button').disabled = false; preview.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
     };

@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { createApp } from '../server.js';
 let root, app, base;
 const work = page => page.locator('#calendar-workspace');
-const saved = page => expect(work(page).getByRole('status')).toContainText('Saved to disk');
+const saved = async page => { await expect(work(page).getByRole('status')).toContainText('Saved to disk'); await expect(page.getByRole('dialog')).toHaveCount(0); };
 const disk = async () => (await app.calendar.read()).document;
 async function add(page, title='Meeting', start='2026-10-10T10:00') {
   await page.getByRole('button',{name:'Add event',exact:true}).click(); await work(page).getByLabel('Title',{exact:true}).fill(title); await page.getByLabel('Starting time',{exact:true}).fill(start);
@@ -28,7 +28,8 @@ test('required-only creation, optional edits, export and reload',async ({page}) 
   await work(page).getByLabel('Title',{exact:true}).fill('Research meeting 中文'); await page.getByLabel('Starting time',{exact:true}).fill('2026-10-10T10:00'); await page.keyboard.press('ControlOrMeta+s'); await expect(page.getByRole('dialog')).toHaveCount(0); await saved(page);
   let event=(await disk()).events[0]; expect(event.start).toBe('2026-10-10T02:00:00.000Z'); expect(event.location).toBeUndefined(); expect(event.durationMinutes).toBeUndefined();
   await work(page).getByRole('button',{name:'Edit event',exact:true}).first().click(); await work(page).getByLabel('Title',{exact:true}).fill('Edited meeting'); await page.getByLabel('Location (optional)',{exact:true}).fill('Room A'); await page.getByLabel('Duration in minutes (optional)',{exact:true}).fill('45'); await page.getByRole('button',{name:'Save event',exact:true}).click(); await expect(page.getByRole('dialog')).toHaveCount(0); await saved(page);
-  await page.reload(); await expect(work(page)).toContainText('Room A'); await expect(work(page)).toContainText('Ends 10/10/2026, 10:45:00 AM'); await expect(work(page)).not.toContainText('45 minutes'); expect((await disk()).events[0].id).toBe(event.id);
+  expect(await page.evaluate(() => localStorage.getItem('fieldnotes-calendar-form'))).toBeNull();
+  await page.reload(); await expect(page.getByRole('dialog')).toHaveCount(0); await expect(work(page)).toContainText('Room A'); await expect(work(page)).toContainText('Ends 10/10/2026, 10:45:00 AM'); await expect(work(page)).not.toContainText('45 minutes'); expect((await disk()).events[0].id).toBe(event.id);
   const download=page.waitForEvent('download'); await page.getByRole('button',{name:'Export JSON',exact:true}).click(); expect((await download).suggestedFilename()).toBe('workbench-calendar.json'); expect(errors).toEqual([]);
   await page.screenshot({path:'/tmp/fieldnotes-calendar.png',fullPage:true});
 });

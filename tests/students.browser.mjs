@@ -214,6 +214,7 @@ test('global search finds student text and opens meeting records and archived ob
   await expect(page.locator('.student-session')).toHaveAttribute('open', '');
   await expect(page.locator('.student-session')).toContainText('示例检索词');
   await page.locator('#search-launch').click(); await page.locator('#search-input').fill('Archived keyword');
+  await expect(page.locator('.result-snippet mark')).toHaveText('Archived keyword');
   await expect(page.locator('#search-summary')).toHaveText('1 matching result · 1 text match');
   await page.locator('.result-snippet').click(); await expect(page).toHaveURL(studentUrl);
   await expect(work(page).locator('.student-objectives [data-goal]').filter({ hasText: 'Archived keyword objective' })).toBeVisible();
