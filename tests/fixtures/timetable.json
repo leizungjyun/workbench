@@ -1,0 +1,376 @@
+{
+  "schemaVersion": 1,
+  "schools": [
+    {
+      "id": "SUAT",
+      "name": "Example University"
+    }
+  ],
+  "semesters": [
+    {
+      "id": "example-autumn",
+      "schoolId": "SUAT",
+      "name": "Example autumn semester",
+      "timeZone": "Asia/Shanghai",
+      "startDate": "2026-08-24",
+      "endDate": "2027-01-03",
+      "teachingEndDate": "2026-12-18",
+      "weekOneMonday": "2026-08-24",
+      "periods": [
+        {
+          "number": 1,
+          "start": "08:30",
+          "end": "09:10"
+        },
+        {
+          "number": 2,
+          "start": "09:20",
+          "end": "10:00"
+        },
+        {
+          "number": 3,
+          "start": "10:15",
+          "end": "10:55"
+        },
+        {
+          "number": 4,
+          "start": "11:00",
+          "end": "11:40"
+        },
+        {
+          "number": 5,
+          "start": "14:20",
+          "end": "15:00"
+        },
+        {
+          "number": 6,
+          "start": "15:15",
+          "end": "15:55"
+        },
+        {
+          "number": 7,
+          "start": "16:00",
+          "end": "16:40"
+        },
+        {
+          "number": 8,
+          "start": "17:00",
+          "end": "17:40"
+        },
+        {
+          "number": 9,
+          "start": "18:30",
+          "end": "19:10"
+        },
+        {
+          "number": 10,
+          "start": "19:15",
+          "end": "19:55"
+        },
+        {
+          "number": 11,
+          "start": "20:00",
+          "end": "20:40"
+        },
+        {
+          "number": 12,
+          "start": "20:45",
+          "end": "21:25"
+        }
+      ],
+      "holidays": [
+        {
+          "start": "2026-09-25",
+          "end": "2026-09-25",
+          "name": "Example break"
+        },
+        {
+          "start": "2026-10-01",
+          "end": "2026-10-08",
+          "name": "Example recess"
+        }
+      ],
+      "overrides": [
+        {
+          "date": "2026-09-20",
+          "weekday": 3,
+          "parity": "odd"
+        },
+        {
+          "date": "2026-10-10",
+          "weekday": 3,
+          "parity": "even"
+        }
+      ],
+      "annotations": []
+    }
+  ],
+  "student": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "name": "Example Student",
+    "schoolId": "SUAT",
+    "timetables": [
+      {
+        "semesterId": "example-autumn",
+        "courses": [
+          {
+            "id": "ai-1",
+            "name": "Example computation",
+            "code": "DEMO-101",
+            "location": "Example room A",
+            "notes": "Synthetic course for automated tests",
+            "weekday": 1,
+            "periods": [
+              3,
+              4
+            ],
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ],
+            "status": "confirmed",
+            "parity": "all"
+          },
+          {
+            "id": "numerics-1",
+            "name": "Example numerics",
+            "code": "DEMO-101",
+            "location": "Example room A",
+            "notes": "Synthetic course for automated tests",
+            "weekday": 1,
+            "periods": [
+              6,
+              7
+            ],
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ],
+            "status": "confirmed",
+            "parity": "all"
+          },
+          {
+            "id": "seminar-1",
+            "name": "Example seminar",
+            "code": "DEMO-101",
+            "location": "Example room A",
+            "notes": "Synthetic course for automated tests",
+            "weekday": 1,
+            "periods": [
+              9,
+              10
+            ],
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ],
+            "status": "confirmed",
+            "parity": "all"
+          },
+          {
+            "id": "ai-3",
+            "name": "Example computation",
+            "code": "DEMO-101",
+            "location": "Example room A",
+            "notes": "Synthetic course for automated tests",
+            "weekday": 3,
+            "periods": [
+              3,
+              4
+            ],
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ],
+            "status": "confirmed",
+            "parity": "all"
+          },
+          {
+            "id": "numerics-3",
+            "name": "Example numerics",
+            "code": "DEMO-101",
+            "location": "Example room A",
+            "notes": "Synthetic course for automated tests",
+            "weekday": 3,
+            "periods": [
+              6,
+              7
+            ],
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ],
+            "status": "confirmed",
+            "parity": "all"
+          },
+          {
+            "id": "rl-2",
+            "name": "Example learning",
+            "code": "DEMO-101",
+            "location": "Example room A",
+            "notes": "Synthetic course for automated tests",
+            "weekday": 2,
+            "periods": [
+              5,
+              6
+            ],
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ],
+            "status": "confirmed",
+            "parity": "all"
+          },
+          {
+            "id": "rl-3-pending",
+            "name": "Example learning",
+            "code": "DEMO-101",
+            "location": "Example room A",
+            "notes": "Synthetic course for automated tests",
+            "weekday": 3,
+            "periods": [
+              11,
+              12
+            ],
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ],
+            "status": "confirmed",
+            "parity": "all"
+          },
+          {
+            "id": "theory-discussion-4-pending",
+            "name": "Example discussion",
+            "code": "DEMO-101",
+            "location": "Example room A",
+            "notes": "Synthetic course for automated tests",
+            "weekday": 4,
+            "periods": [
+              4
+            ],
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ],
+            "status": "confirmed",
+            "parity": "all"
+          }
+        ]
+      }
+    ]
+  }
+}

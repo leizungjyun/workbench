@@ -1,0 +1,210 @@
+import { test, expect } from '@playwright/test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createApp } from '../server.js';
+let root,app,base,studentId,serverNow;
+const fixture=JSON.parse(await fs.readFile(new URL('./fixtures/timetable.json',import.meta.url),'utf8'));
+test.use({timezoneId:'Asia/Shanghai'});
+test.beforeEach(async({page})=>{
+  root=await fs.mkdtemp(path.join(os.tmpdir(),'workbench-timetable-ui-'));await fs.mkdir(path.join(root,'collections'));await fs.writeFile(path.join(root,'collections/Notebook.md'),'# Notebook');await fs.symlink(path.resolve('dist'),path.join(root,'dist'));serverNow=Date.parse('2026-10-12T00:00:00Z');app=await createApp(root, { now: () => serverNow });
+  let academic=await app.timetables.read();academic.document.semesters=structuredClone(fixture.semesters);await app.timetables.save(academic);
+  let student=await app.students.create({name:'Example Student'});studentId=student.document.id;student.document.profile.schoolId='SUAT';student.document.timetables=structuredClone(fixture.student.timetables);await app.students.save(studentId,student);
+  await app.students.create({name:'Unassigned student'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${app.server.address().port}`;
+  await page.clock.install({time:new Date('2026-10-12T00:00:00Z')});
+});
+test.afterEach(async({context})=>{for(const page of context.pages())await page.close();await app.terminals.close();await app.kernels.close();await new Promise(r=>{app.server.close(r);app.server.closeAllConnections();});await fs.rm(root,{recursive:true,force:true});});
+test('dashboard filters, confirmed coverage, weekly navigation, overlays and mobile layout',async({page})=>{
+  await page.goto(base+'/?view=students');const panel=page.getByRole('region',{name:'Student timetables'});await expect(panel).toContainText('Timetable dashboard');await panel.getByLabel('School filter').selectOption('SUAT');await panel.getByLabel('Student filter').selectOption(studentId);await expect(panel).toContainText('Example computation');await page.screenshot({path:'/tmp/timetable-dashboard.png',fullPage:true});await expect(panel).not.toContainText('availability incomplete');await panel.getByRole('button',{name:'Next week',exact:true}).click();await expect(panel.getByLabel('Timetable week')).toHaveValue('2026-10-19');await panel.getByLabel('School filter').selectOption('SYSU');await expect(panel).not.toContainText('Example computation');
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.goto(base+'/?view=calendar&date=2026-10-12');await page.getByText('Student class overlays',{exact:true}).click();await page.getByLabel('Show classes: Example Student').check();await expect(page.locator('.calendar-layout')).toContainText('Example computation');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+test('course JSON import requires review, preserves other semesters and repeated import retains stable course IDs',async({page})=>{
+  await page.goto(base+`/?view=student&id=${studentId}`);await page.getByRole('button',{name:'Edit / import courses'}).click();const dialog=page.getByRole('dialog',{name:'Edit semester courses'});
+  const incoming=structuredClone(fixture.student.timetables);incoming[0].courses[0].location='Updated room';await dialog.getByLabel('Import JSON',{exact:true}).fill(JSON.stringify(incoming));await dialog.getByRole('button',{name:'Load import preview'}).click();await dialog.getByRole('button',{name:'Apply reviewed changes'}).click();await expect(dialog).toContainText('Review changes before applying');await dialog.getByRole('button',{name:'Review changes',exact:true}).click();await dialog.getByRole('button',{name:'Apply reviewed changes'}).click();await expect(dialog).toHaveCount(0);
+  const doc=(await app.students.read(studentId)).document;expect(doc.timetables[0].courses).toHaveLength(8);expect(doc.timetables[0].courses[0].location).toBe('Updated room');
+  await page.getByRole('button',{name:'Edit / import courses'}).click();await dialog.getByLabel('Import JSON',{exact:true}).fill(JSON.stringify(incoming));await dialog.getByRole('button',{name:'Load import preview'}).click();await dialog.getByRole('button',{name:'Review changes',exact:true}).click();await dialog.getByRole('button',{name:'Apply reviewed changes'}).click();await expect(dialog).toHaveCount(0);expect((await app.students.read(studentId)).document.timetables[0].courses).toHaveLength(8);
+});
+test('academic drafts recover; stale disk revisions preserve draft and prevent overwrite',async({page})=>{
+  await page.goto(base+'/?view=students');await page.getByRole('button',{name:'School calendars',exact:true}).click();let dialog=page.getByRole('dialog',{name:'School calendars'});await dialog.getByLabel('Semester name',{exact:true}).fill('Draft autumn');await dialog.getByRole('button',{name:'Close',exact:true}).click();await page.reload();await page.getByRole('button',{name:'School calendars',exact:true}).click();await expect(dialog.getByLabel('Semester name',{exact:true})).toHaveValue('Draft autumn');
+  const external=await app.timetables.read();external.document.semesters[0].name='Disk autumn';await app.timetables.save(external);await dialog.getByRole('button',{name:'Review changes',exact:true}).click();await dialog.getByRole('button',{name:'Apply reviewed changes'}).click();await expect(dialog).toContainText('changed on disk');expect((await app.timetables.read()).document.semesters[0].name).toBe('Disk autumn');await dialog.getByRole('button',{name:'Close',exact:true}).click();await page.reload();await page.getByRole('button',{name:'School calendars',exact:true}).click();await dialog.getByRole('button',{name:'Review changes',exact:true}).click();await dialog.getByRole('button',{name:'Apply reviewed changes'}).click();await expect(dialog).toContainText('recovered draft is stale');await dialog.getByRole('button',{name:'Reload disk / discard draft'}).click();await expect(dialog.getByLabel('Semester name',{exact:true})).toHaveValue('Disk autumn');
+});
+test('Students schedules one Calendar conversation, conflict override is explicit, Daily links and rescheduling preserve identity',async({page})=>{
+  await page.goto(base+`/?view=student&id=${studentId}`);await page.getByRole('button',{name:'Schedule conversation',exact:true}).click();const dialog=page.getByRole('dialog');await expect(dialog.getByLabel('Conversation student')).toHaveValue(studentId);await expect(dialog.getByLabel('Duration in minutes (optional)',{exact:true})).toHaveValue('30');await dialog.getByLabel('Starting time',{exact:true}).fill('2026-10-12T10:30');await expect(dialog).toContainText('Conflict: Example computation');await expect(dialog).toContainText('Free slots on this date');
+  const dismissed=new Promise(resolve=>page.once('dialog',async d=>{await d.dismiss();resolve();}));await dialog.getByRole('button',{name:'Save event',exact:true}).click();await dismissed;await expect(dialog.getByRole('button',{name:'Save event',exact:true})).toBeEnabled();await expect(dialog).toBeVisible();expect((await app.calendar.read()).document.events).toHaveLength(0);
+  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Save event',exact:true}).click();await expect(dialog).toHaveCount(0);const event=(await app.calendar.read()).document.events[0];expect(event.studentId).toBe(studentId);
+  await page.goto(base+'/?view=daily&date=2026-10-12');await expect(page.locator('#daily-workspace')).toContainText('Conversation conflict: Example computation');await page.getByRole('link',{name:'Reschedule in Calendar'}).click();await expect(dialog.getByLabel('Starting time',{exact:true})).toHaveValue('2026-10-12T10:30');await dialog.getByLabel('Starting time',{exact:true}).fill('2026-10-12T12:00');await dialog.getByRole('button',{name:'Save event',exact:true}).click();await expect(dialog).toHaveCount(0);const changed=(await app.calendar.read()).document.events;expect(changed).toHaveLength(1);expect(changed[0].id).toBe(event.id);expect(changed[0].start).toBe('2026-10-12T04:00:00.000Z');
+  await page.goto(base+'/?view=student&id='+studentId);await expect(page.locator('.student-preparation')).toContainText('Scheduled:');
+});
+test('duration is required for conversations; event draft restores selected student after reload',async({page})=>{
+  await page.goto(base+'/?view=calendar&date=2026-10-12');await page.getByRole('button',{name:'Add event',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Title',{exact:true}).fill('Draft conversation');await dialog.getByLabel('Conversation student').selectOption(studentId);await dialog.getByLabel('Starting time',{exact:true}).fill('2026-10-12T12:00');await dialog.getByLabel('Duration in minutes (optional)',{exact:true}).fill('');await dialog.getByRole('button',{name:'Save event',exact:true}).click();await expect(dialog).toContainText('require a duration or end time');expect((await app.calendar.read()).document.events).toHaveLength(0);await dialog.getByLabel('Duration in minutes (optional)',{exact:true}).fill('30');page.on('dialog',d=>d.accept());await page.reload();await expect(dialog.getByLabel('Conversation student')).toHaveValue(studentId);await expect(dialog.getByLabel('Title',{exact:true})).toHaveValue('Draft conversation');await dialog.getByRole('button',{name:'Save event',exact:true}).click();await expect(dialog).toHaveCount(0);expect((await app.calendar.read()).document.events).toHaveLength(1);
+});
+
+test('period grid aligns courses, opens full details, keeps mobile scrolling inside the timetable and includes makeup weekends', async ({ page }) => {
+  await page.goto(base + `/?view=student&id=${studentId}`);
+  const panel = page.getByRole('region', { name: 'Student timetables' });
+  const grid = panel.getByRole('region', { name: 'Weekly course grid' });
+  await expect(panel.locator('.timetable-day-heading')).toHaveCount(5);
+  await expect(grid).toContainText('第3节');
+  await expect(grid).toContainText('10:15–10:55');
+  expect(await grid.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await panel.screenshot({ path: '/tmp/timetable-readable-week.png' });
+  const monday = panel.locator('[data-course="ai-1"]');
+  const wednesday = panel.locator('[data-course="ai-3"]');
+  const a = await monday.boundingBox(), b = await wednesday.boundingBox();
+  expect(Math.abs(a.y - b.y)).toBeLessThan(1);
+  expect(a.height).toBeGreaterThan(100);
+  await monday.click();
+  const details = page.getByRole('dialog', { name: 'Example computation' });
+  await expect(details).toContainText('DEMO-101');
+  await expect(details).toContainText('Example room A');
+  await expect(details).toContainText('Teaching weeks');
+  await details.getByRole('button', { name: 'Close', exact: true }).click();
+  await panel.getByRole('button', { name: 'Show weekends', exact: true }).click();
+  await expect(panel.locator('.timetable-day-heading')).toHaveCount(7);
+  await panel.getByRole('button', { name: 'Hide empty weekends', exact: true }).click();
+  await panel.getByLabel('Timetable week').fill('2026-09-14');
+  await expect(panel.locator('.timetable-day-heading')).toHaveCount(6);
+  await expect(panel.locator('.timetable-day-heading').last()).toContainText('Teaches Wed (odd)');
+  await expect(panel.locator('[aria-label="2026-09-20 courses"]')).toContainText('Example computation');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(await grid.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);
+});
+
+test('confirmed course blocks appear at Wednesday 11–12 and Thursday 4, while pending coverage still warns', async ({ page }) => {
+  await page.goto(base + `/?view=student&id=${studentId}`);
+  const panel = page.getByRole('region', { name: 'Student timetables' });
+  await expect(panel.locator('.timetable-coverage')).toHaveCount(0);
+  await expect(panel.locator('[data-course="rl-3-pending"]')).toContainText('20:00–21:25');
+  await expect(panel.locator('[data-course="theory-discussion-4-pending"]')).toContainText('11:00–11:40');
+  await panel.locator('[data-course="theory-discussion-4-pending"]').click();
+  const details = page.getByRole('dialog', { name: 'Example discussion' });
+  await expect(details).toContainText('Teaching weeks');
+  await expect(details).toContainText('1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17');
+  await details.getByRole('button', { name: 'Close', exact: true }).click();
+  const draft = await app.students.read(studentId);
+  draft.document.timetables[0].courses.find(c => c.id === 'rl-3-pending').status = 'pending';
+  await app.students.save(studentId, draft);
+  await page.reload();
+  await expect(panel.locator('.timetable-coverage')).toContainText('availability incomplete');
+  await expect(panel.locator('.timetable-coverage')).toContainText('1 course entries pending review');
+});
+
+test('selecting a student immediately shows all-day availability, duration changes recalculate it, and weekend slots are available', async ({ page }) => {
+  await page.goto(base + '/?view=calendar&date=2026-10-12');
+  await page.getByRole('button', { name: 'Add event', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Conversation student').selectOption(studentId);
+  await expect(dialog.getByLabel('Duration in minutes (optional)', { exact: true })).toHaveValue('30');
+  await expect(dialog).toContainText('Free slots on this date');
+  const windows = dialog.locator('.conversation-free-windows');
+  await expect(windows).toContainText('08:30–10:15');
+  await expect(windows).toContainText('19:55–21:30');
+  const choices = dialog.locator('.conversation-slot-options');
+  expect(await choices.getByRole('button').count()).toBeGreaterThan(6);
+  await expect(choices.getByRole('button', { name: '08:30–09:00', exact: true })).toBeVisible();
+  await expect(choices.getByRole('button', { name: '21:00–21:30', exact: true })).toHaveCount(1);
+  await choices.getByRole('button', { name: '11:40–12:10', exact: true }).click();
+  await expect(dialog.getByLabel('Starting time', { exact: true })).toHaveValue('2026-10-12T11:40');
+  await dialog.getByLabel('Duration in minutes (optional)', { exact: true }).fill('60');
+  await expect(choices.getByRole('button', { name: '20:30–21:30', exact: true })).toHaveCount(1);
+  await expect(choices.getByRole('button', { name: '21:00–21:30', exact: true })).toHaveCount(0);
+  await dialog.getByLabel('Starting time', { exact: true }).fill('2026-10-17T09:00');
+  await expect(windows).toContainText('08:30–21:30');
+  await expect(choices.getByRole('button', { name: '08:30–09:30', exact: true })).toHaveCount(1);
+});
+
+test('open conversation form checks current classes and events instead of cached schedules', async ({ page }) => {
+  await page.goto(base + '/?view=calendar&date=2026-10-12');
+  await page.getByRole('button', { name: 'Add event', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  const changed = await app.students.read(studentId);
+  changed.document.timetables[0].courses.push({id:'new-class',name:'Newly added class',code:'',location:'',notes:'',weekday:1,periods:[5,6],weeks:[8],status:'confirmed',parity:'all'});
+  await app.students.save(studentId, changed);
+  const calendar = await app.calendar.read();
+  calendar.document.events.push({id:randomUUID(),title:'External Calendar booking',start:'2026-10-12T06:00:00.000Z',durationMinutes:30});
+  await app.calendar.save(calendar);
+  await dialog.getByLabel('Starting time', { exact: true }).fill('2026-10-12T14:00');
+  await dialog.getByLabel('Conversation student').selectOption(studentId);
+  await expect(dialog).toContainText('Conflict: Newly added class');
+  await expect(dialog).toContainText('Conflict: External Calendar booking');
+  await expect(dialog.locator('.conversation-free-windows')).not.toContainText('11:40–15:15');
+  const newer = await app.students.read(studentId);
+  newer.document.timetables[0].courses = newer.document.timetables[0].courses.filter(c=>c.id!=='new-class');
+  await app.students.save(studentId, newer);
+  await dialog.getByLabel('Duration in minutes (optional)', { exact: true }).fill('45');
+  await expect(dialog).not.toContainText('Conflict: Newly added class');
+  await expect(dialog).toContainText('Conflict: External Calendar booking');
+});
+
+test('past dates have no choices and today advances to future minute boundaries while the form stays open', async ({ page }) => {
+  serverNow = Date.parse('2026-10-12T06:22:20Z');
+  await page.clock.setSystemTime(new Date(serverNow));
+  await page.goto(base + '/?view=calendar&date=2026-10-12');
+  await page.getByRole('button', { name: 'Add event', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Conversation student').selectOption(studentId);
+  const windows = dialog.locator('.conversation-free-windows'), options = dialog.locator('.conversation-slot-options');
+  await expect(windows).toContainText('14:23–15:15');
+  await expect(options.getByRole('button', {name:'08:30–09:00',exact:true})).toHaveCount(0);
+  await expect(options.getByRole('button', {name:'14:23–14:53',exact:true})).toHaveCount(1);
+  serverNow = Date.parse('2026-10-12T06:24:20Z');
+  await page.clock.runFor(120000);
+  await expect(windows).toContainText('14:25–15:15');
+  await expect(options.getByRole('button', {name:'14:23–14:53',exact:true})).toHaveCount(0);
+  await dialog.getByLabel('Starting time', {exact:true}).fill('2026-10-11T12:00');
+  await expect(dialog).toContainText('The selected starting time is in the past');
+  await expect(options.getByRole('button')).toHaveCount(0);
+  await expect(windows).toContainText('No future free time');
+  await dialog.getByLabel('Starting time', {exact:true}).fill('2026-10-13T09:00');
+  await expect(options.getByRole('button',{name:'08:30–09:00',exact:true})).toHaveCount(1);
+});
+
+test('new SYSU semesters use all eleven supplied bell periods and save after review', async ({page}) => {
+  // Legacy workspaces without school defaults still receive the supplied times.
+  const academic = await app.timetables.read(); delete academic.document.schools[0].periods;
+  await app.timetables.save(academic);
+  await page.goto(base + '/?view=students');
+  await page.getByRole('button', {name:'School calendars', exact:true}).click();
+  const dialog = page.getByRole('dialog', {name:'School calendars'});
+  await dialog.getByRole('button', {name:'Add semester', exact:true}).click();
+  await expect(dialog.getByLabel('Semester school')).toHaveValue('SYSU');
+  await expect(dialog.getByLabel('Period start', {exact:true})).toHaveCount(11);
+  await expect(dialog.getByLabel('Period start', {exact:true}).first()).toHaveValue('08:00');
+  await expect(dialog.getByLabel('Period end', {exact:true}).last()).toHaveValue('21:35');
+  await dialog.getByLabel('Period start', {exact:true}).first().fill('08:05');
+  await dialog.getByRole('button', {name:'Use school bell times', exact:true}).click();
+  await expect(dialog.getByLabel('Period start', {exact:true}).first()).toHaveValue('08:00');
+  await dialog.getByRole('button', {name:'Review changes', exact:true}).click();
+  await dialog.getByRole('button', {name:'Apply reviewed changes', exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+  const saved = (await app.timetables.read()).document;
+  expect(saved.semesters.find(s=>s.schoolId==='SYSU').periods).toEqual((await import('../timetable-model.js')).newTimetables('test').schools[0].periods);
+  expect(saved.semesters.find(s=>s.schoolId==='SUAT')).toEqual(fixture.semesters[0]);
+});
+
+test('completed coursework hides the detail timetable and dashboard student; profile can restore it', async ({page}) => {
+  const student = await app.students.read(studentId);
+  student.document.profile.entryYear = '2024';
+  await app.students.save(studentId, student);
+  await page.goto(base + `/?view=student&id=${studentId}`);
+  await expect(page.getByRole('region',{name:'Student timetables'})).toBeVisible();
+  await page.getByRole('button',{name:'Edit profile',exact:true}).click();
+  await page.getByLabel('Course status',{exact:true}).selectOption('completed');
+  await page.getByRole('button',{name:'Save profile',exact:true}).click();
+  await expect(page.locator('.student-profile-summary')).toContainText('All courses completed');
+  await expect(page.locator('.student-profile-summary')).toContainText('Year 3');
+  await expect(page.getByRole('region',{name:'Student timetables'})).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('region',{name:'Student timetables'})).toHaveCount(0);
+  expect((await app.students.read(studentId)).document.timetables).toEqual(fixture.student.timetables);
+  await page.goto(base + '/?view=students');
+  await expect(page.getByLabel('Student filter').locator(`option[value="${studentId}"]`)).toHaveCount(0);
+  await page.goto(base + `/?view=student&id=${studentId}`);
+  await page.getByRole('button',{name:'Edit profile',exact:true}).click();
+  await page.getByLabel('Course status',{exact:true}).selectOption('ongoing');
+  await page.getByRole('button',{name:'Save profile',exact:true}).click();
+  await expect(page.getByRole('region',{name:'Student timetables'})).toBeVisible();
+});
