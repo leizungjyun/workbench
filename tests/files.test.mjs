@@ -52,3 +52,8 @@ test('relative collection images are indexed before archive and survive individu
  const note=await store.read('picture.md'); assert.match(note.attachments['picture.png'],/^\/api\/file\/raw/);
  const archive=await store.transfer({path:'picture.md',action:'archive',revision:(await store.item({path:'picture.md'})).revision}); const stored=await store.read('',archive); const id=stored.attachments['picture.png'].split('/').at(-1); assert.equal(await fs.readFile(await store.attachment(id),'utf8'),'image bytes');
 });
+
+test('migration excludes application instructions while importing actual user notes',async t=>{
+ const {root}=await fixture(t); const {migrate}=await import('../scripts/migrate.mjs'); await fs.writeFile(path.join(root,'AGENTS.md'),'# Instructions'); await fs.writeFile(path.join(root,'README.md'),'# App documentation'); await fs.writeFile(path.join(root,'package.json'),'{}'); await fs.writeFile(path.join(root,'server.js'),'// app'); await fs.mkdir(path.join(root,'notes')); await fs.writeFile(path.join(root,'notes/README.md'),'# User note');
+ assert.equal((await migrate(root)).moved,1); assert.equal(await fs.readFile(path.join(root,'AGENTS.md'),'utf8'),'# Instructions'); assert.equal(await fs.readFile(path.join(root,'README.md'),'utf8'),'# App documentation'); assert.equal(await fs.readFile(path.join(root,'collections/notes/README.md'),'utf8'),'# User note');
+});

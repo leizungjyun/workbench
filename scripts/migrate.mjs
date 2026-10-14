@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { workspacePath } from '../workspace.js';
 import { isJupyter, parseNotebook } from '../notebooks.js';
 
 export const hash = data => createHash('sha256').update(data).digest('hex');
@@ -11,6 +12,8 @@ async function scan(root, prefix = '') {
   for (const entry of await fs.readdir(path.join(root, prefix), { withFileTypes: true })) {
     if (entry.name.startsWith('.') || excluded.has(entry.name) || entry.isSymbolicLink()) continue;
     const relative = path.posix.join(prefix, entry.name);
+    if (!prefix && ['AGENTS.md','MULTI-TAB.md'].includes(entry.name)) continue;
+    if (relative === 'README.md' && await exists(path.join(root, 'package.json')) && await exists(path.join(root, 'server.js'))) continue;
     if (relative === 'README.md' && entry.isFile() && (await fs.readFile(path.join(root, relative), 'utf8')).startsWith('<!-- fieldnotes: app-documentation -->')) continue;
     if (entry.isDirectory()) result.push(...await scan(root, relative));
     else if (entry.isFile() && /\.(md|ipynb)$/i.test(entry.name)) result.push(relative);
@@ -77,5 +80,5 @@ export async function migrate(root) {
   return { moved: sources.length, verified: sources.length, imported: entries.size };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  console.log(JSON.stringify(await migrate(process.argv[2] || process.cwd()), null, 2));
+  console.log(JSON.stringify(await migrate(process.argv[2] || workspacePath([])), null, 2));
 }
