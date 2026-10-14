@@ -200,23 +200,23 @@ test('sections open as formatted previews with explicit edit controls', async ({
 
 
 test('global search finds student text and opens meeting records and archived objectives', async ({ page }) => {
-  await create(page, 'Search student'); await rich(page, 'Next meeting agenda', 'The student said 数学二 does not test linear spaces.'); await saved(page);
+  await create(page, 'Search student'); await rich(page, 'Next meeting agenda', 'A fictional meeting discussed 示例检索词.'); await saved(page);
   await page.getByRole('button', { name: 'Start meeting', exact: true }).click(); await saved(page);
   await goal(page, 'Archived keyword objective'); await saved(page);
   await page.getByRole('button', { name: 'Archive objective', exact: true }).click(); await saved(page);
   await page.getByRole('button', { name: 'Archive student', exact: true }).click(); await saved(page);
   const studentUrl = page.url();
-  await page.locator('#search-launch').click(); await page.locator('#search-input').fill('数学二');
+  await page.locator('#search-launch').click(); await page.locator('#search-input').fill('示例检索词');
   await expect(page.locator('#search-summary')).toHaveText('1 matching result · 1 text match');
   await expect(page.locator('.result-group')).toContainText('Archived student');
-  await expect(page.locator('.result-snippet mark')).toHaveText('数学二');
+  await expect(page.locator('.result-snippet mark')).toHaveText('示例检索词');
   await page.locator('.result-snippet').click(); await expect(page).toHaveURL(studentUrl);
   await expect(page.locator('.student-session')).toHaveAttribute('open', '');
-  await expect(page.locator('.student-session')).toContainText('数学二');
+  await expect(page.locator('.student-session')).toContainText('示例检索词');
   await page.locator('#search-launch').click(); await page.locator('#search-input').fill('Archived keyword');
   await expect(page.locator('#search-summary')).toHaveText('1 matching result · 1 text match');
   await page.locator('.result-snippet').click(); await expect(page).toHaveURL(studentUrl);
-  await expect(work(page).getByText('Archived keyword objective', { exact: true }).first()).toBeVisible();
+  await expect(work(page).locator('.student-objectives [data-goal]').filter({ hasText: 'Archived keyword objective' })).toBeVisible();
   await page.locator('#search-launch').click(); await page.locator('#search-input').fill('missing keyword');
   await expect(page.locator('.empty-message')).toContainText('No results found');
 });

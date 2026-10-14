@@ -243,7 +243,7 @@ test('completed tasks move to the end of their category, with stable groups, reo
   expect(await order()).toEqual(['First task', 'Second task', 'Third task']);
   await page.getByRole('button', { name: 'Undo task change', exact: true }).click();
   expect(await order()).toEqual(['Second task', 'First task', 'Third task']);
-  await saved(page); await page.reload(); expect(await order()).toEqual(['Second task', 'First task', 'Third task']);
+  await saved(page); await page.reload(); await expect.poll(order).toEqual(['Second task', 'First task', 'Third task']);
   expect((await disk()).tasks.map(task => task.id)).toEqual(ids);
   await date(page, '2026-10-10'); expect(await order()).toEqual(['Second task']);
   await expect(page.getByLabel('Task', { exact: true })).toHaveCount(2);
