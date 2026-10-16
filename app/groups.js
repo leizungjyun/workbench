@@ -67,17 +67,27 @@ export class GroupWorkspace extends StudentWorkspace {
     const dialog = el('dialog', '', 'student-dialog group-members-dialog'); dialog.setAttribute('aria-label', creating ? 'Add group' : 'Edit group');
     const form = el('form'), name = el('input'); name.value = draft.name; name.required = true; name.maxLength = 1000; name.setAttribute('aria-label', 'Group name');
     const leader = el('select'); leader.setAttribute('aria-label', 'Student leader'); leader.required = true;
-    const members = el('div', '', 'group-member-options');
+    const members = el('div', '', 'group-member-options'); members.setAttribute('role', 'group'); members.setAttribute('aria-label', 'Group members');
+    const memberHeading = el('div', '', 'group-members-heading'), selectedCount = el('span', '', 'student-muted');
+    const updateCount = () => { selectedCount.textContent = `${draft.memberIds.length} selected`; };
+    memberHeading.append(el('h3', 'Members'), selectedCount); updateCount();
     const updateLeader = () => { leader.replaceChildren(el('option', 'Choose a leader')); leader.firstChild.value = ''; for (const id of draft.memberIds) { const o = el('option', this.name(id)); o.value = id; leader.append(o); } leader.value = draft.leaderId; };
     for (const s of this.studentDocuments.filter(s => !s.archived || draft.memberIds.includes(s.id))) {
-      const label = el('label', '', 'student-check'), input = el('input'); input.type = 'checkbox'; input.checked = draft.memberIds.includes(s.id); input.setAttribute('aria-label', `Member: ${s.profile.name}`);
-      input.onchange = () => { draft.memberIds = input.checked ? [...draft.memberIds, s.id] : draft.memberIds.filter(id => id !== s.id); updateLeader(); };
-      label.append(input, el('span', `${s.profile.name}${s.archived ? ' (archived)' : ''}`)); members.append(label);
+      const label = el('label', '', 'student-check group-member-option'), input = el('input'); input.type = 'checkbox'; input.checked = draft.memberIds.includes(s.id); input.setAttribute('aria-label', `Member: ${s.profile.name}`);
+      input.onchange = () => { draft.memberIds = input.checked ? [...draft.memberIds, s.id] : draft.memberIds.filter(id => id !== s.id); updateLeader(); updateCount(); };
+      const copy = el('span', '', 'group-member-copy'); copy.append(el('strong', s.profile.name));
+      const detail = [s.profile.schoolId, s.profile.program, s.archived ? 'Archived' : ''].filter(Boolean).join(' · ');
+      if (detail) copy.append(el('small', detail));
+      label.append(input, copy); members.append(label);
     }
+    if (!members.childElementCount) members.append(el('p', 'Add a student in Students before creating a group.', 'student-muted'));
     leader.onchange = () => { draft.leaderId = leader.value; };
     updateLeader(); const error = el('p', '', 'form-error'); error.setAttribute('role', 'alert');
     const submit = el('button', creating ? 'Create group' : 'Save group'); submit.type = 'submit';
-    form.append(el('h2', creating ? 'Add group' : 'Edit group'), el('label', 'Group name'), name, el('h3', 'Members'), members, el('label', 'Student leader'), leader, error, submit, this.button('Cancel', () => dialog.close()));
+    const nameField = el('label', '', 'student-field'); nameField.append(el('span', 'Group name'), name);
+    const leaderField = el('label', '', 'student-field'); leaderField.append(el('span', 'Student leader'), leader);
+    const footer = el('div', '', 'group-members-actions'); submit.className = 'primary'; footer.append(this.button('Cancel', () => dialog.close()), submit);
+    form.append(el('h2', creating ? 'Add group' : 'Edit group'), nameField, memberHeading, members, leaderField, error, footer);
     form.onsubmit = async e => { e.preventDefault(); if (submit.disabled) return; submit.disabled = true;
       try {
         draft.name = name.value.trim(); draft.leaderId = leader.value;

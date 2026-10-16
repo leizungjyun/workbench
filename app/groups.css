@@ -8,7 +8,23 @@
 .group-materials input { display: block; max-width: 100%; margin: 10px 0; }
 .group-schedule-dialog .student-field { margin: 14px 0; }
 .group-schedule-dialog .conversation-preview button { margin: 4px; }
-.group-member-options { max-height: 40vh; overflow: auto; }
+.group-members-dialog form { display: flex; flex-direction: column; gap: 16px; }
+.group-members-dialog h2, .group-members-dialog h3 { margin: 0; }
+.group-members-dialog .student-field > input { margin: 0; }
+.group-members-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.group-members-heading .student-muted { font-size: 12px; }
+.group-member-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 36vh; overflow: auto; padding: 2px; }
+.group-members-dialog .group-member-option { display: flex; align-items: center; gap: 10px; margin: 0; padding: 12px; min-height: 58px; box-sizing: border-box; border: 1px solid #dce2d5; border-radius: 8px; background: #fffefc; cursor: pointer; }
+.group-member-option:hover { border-color: #91a68b; background: #f5f7ef; }
+.group-member-option:has(input:checked) { border-color: #7e9a77; background: #edf3e8; }
+.group-member-option:focus-within { outline: 2px solid #51755a; outline-offset: -2px; }
+.group-members-dialog .group-member-option input { flex: 0 0 16px; width: 16px; height: 16px; margin: 0; accent-color: #2d5745; }
+.group-member-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.group-member-copy strong { font-size: 13px; font-weight: 600; color: #283e33; }
+.group-member-copy small { font-size: 11px; color: #707c71; }
+.group-members-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.group-members-dialog .form-error:empty { display: none; }
+@media (max-width: 520px) { .group-member-options { grid-template-columns: minmax(0, 1fr); } }
 .student-group-overview { margin-top: 20px; }
 .student-group-overview a { color: #365743; }
 .student-group-overview li { margin: 8px 0; }
