@@ -10,6 +10,10 @@ export function validateCalendar(doc) {
     if (typeof event.title !== 'string' || !event.title.trim() || event.title.length > 10000) invalid('An event title is required.');
     if (typeof event.start !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(event.start) || !Number.isFinite(Date.parse(event.start)) || new Date(event.start).toISOString() !== event.start) invalid('A valid UTC starting time is required.');
     if (event.end !== undefined && (typeof event.end !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(event.end) || !Number.isFinite(Date.parse(event.end)) || new Date(event.end).toISOString() !== event.end || event.end <= event.start)) invalid('End time must be a valid UTC time after the starting time.');
+    if (event.groupId !== undefined || event.groupSessionId !== undefined || event.participantIds !== undefined) {
+      if (!uuid.test(event.groupId || '') || !uuid.test(event.groupSessionId || '') || event.id !== event.groupSessionId || event.studentId || !Array.isArray(event.participantIds) || !event.participantIds.length || event.participantIds.length > 10000 || new Set(event.participantIds).size !== event.participantIds.length || event.participantIds.some(id => typeof id !== 'string' || !uuid.test(id))) invalid('Invalid group session link or participants.');
+      if (!event.end && !event.durationMinutes) invalid('Group sessions require a duration or end time.');
+    }
     if (event.studentId !== undefined && (typeof event.studentId !== 'string' || !uuid.test(event.studentId))) invalid('Invalid event student.');
     if (event.studentId && !event.end && !event.durationMinutes) invalid('Student conversations require a duration or end time.');
     if (event.end !== undefined && event.durationMinutes !== undefined) invalid('Choose either an end time or a duration.');

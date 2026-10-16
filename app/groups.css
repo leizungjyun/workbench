@@ -1,0 +1,14 @@
+.group-profile > a { display: inline-block; margin: 4px 16px 4px 0; color: #365743; }
+.group-participants { min-width: 0; }
+.group-participants button, .group-participant-name { display: inline-block; margin: 3px 6px 3px 0; }
+.group-participants button[aria-pressed=true] { background: #dfe9da; border-color: #7e9a77; }
+.group-action { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid #dce2d5; }
+.group-material { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 6px 0; }
+.group-material a { overflow-wrap: anywhere; }
+.group-materials input { display: block; max-width: 100%; margin: 10px 0; }
+.group-schedule-dialog .student-field { margin: 14px 0; }
+.group-schedule-dialog .conversation-preview button { margin: 4px; }
+.group-member-options { max-height: 40vh; overflow: auto; }
+.student-group-overview { margin-top: 20px; }
+.student-group-overview a { color: #365743; }
+.student-group-overview li { margin: 8px 0; }

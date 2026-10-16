@@ -63,6 +63,8 @@ export function validateDaily(doc) {
       if (!categories.has(v.categoryId) || !['open', 'completed', 'cancelled'].includes(v.status)) invalid('Invalid task category or status.');
       str(v.time, 5); if (v.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v.time)) invalid('Invalid task time.');
       optionalDate(v.deadline); date(v.scheduledDate); str(v.studentId, 100); if (v.studentId && !uuid.test(v.studentId)) invalid('Invalid student link.');
+      for (const key of ['groupId', 'groupSessionId']) if (v[key] !== undefined && v[key] !== '' && (typeof v[key] !== 'string' || !uuid.test(v[key]))) invalid('Invalid group link.');
+      if (v.participantIds !== undefined && (!Array.isArray(v.participantIds) || new Set(v.participantIds).size !== v.participantIds.length || v.participantIds.some(id => typeof id !== 'string' || !uuid.test(id)))) invalid('Invalid group participants.');
       arr(v.subtasks); const subIds = new Set();
       for (const s of v.subtasks) { obj(s); if (!uuid.test(s.id) || subIds.has(s.id) || typeof s.done !== 'boolean') invalid('Invalid subtask.'); subIds.add(s.id); str(s.text, 10000); if (!s.text.trim()) invalid('Blank subtasks cannot be saved.'); }
     }

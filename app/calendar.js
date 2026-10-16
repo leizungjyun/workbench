@@ -159,6 +159,7 @@ export class CalendarWorkspace {
     row.append(el('h3', event.title));
     if (row.classList.contains('completed')) row.append(el('span', 'Completed in Daily', 'calendar-completed-label'));
     row.append(el('p', new Date(event.start).toLocaleString()));
+    if (event.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${event.groupId}&session=${event.groupSessionId}`; link.onclick = async e => { if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();if(await this.flush())location.href=link.href; }; row.append(link); }
     if (event.studentId) row.append(el('p', `Student: ${this.students?.find(s => s.id === event.studentId)?.profile.name || 'Unavailable student'}`));
     if (event.location) row.append(el('p', event.location));
     const end = eventEnd(event);
@@ -193,11 +194,12 @@ export class CalendarWorkspace {
     const studentWrap = el('label', '', 'calendar-field'), studentSelect = el('select'); studentSelect.setAttribute('aria-label', 'Conversation student');
     for (const [id, name] of [['', 'No student'], ...(this.students || []).map(s => [s.id, s.profile.name])]) { const option = el('option', name); option.value = id; studentSelect.append(option); }
     studentSelect.value = recovered?.studentId ?? event?.studentId ?? defaults.studentId ?? ''; fields.studentId = studentSelect;
-    studentWrap.append(el('span', 'Conversation student'), studentSelect); form.append(studentWrap);
+    studentWrap.append(el('span', 'Conversation student'), studentSelect); if (!event?.groupId) form.append(studentWrap);
     const preview = el('section', '', 'conversation-preview'); preview.setAttribute('aria-label', 'Conversation timetable'); form.append(preview);
     const makeCandidate = () => {
       const candidate = { id: event?.id || (this.formEventId ||= crypto.randomUUID()), title: fields.title.value.trim() || 'Conversation', start: utcFromLocal(fields.start.value), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
-      if (fields.studentId.value) candidate.studentId = fields.studentId.value;
+      if (event?.groupId) Object.assign(candidate, { groupId: event.groupId, groupSessionId: event.groupSessionId, participantIds: [...event.participantIds] });
+      if (fields.studentId.value && !event?.groupId) candidate.studentId = fields.studentId.value;
       if (fields.categoryId.value) candidate.categoryId = fields.categoryId.value;
       if (fields.location.value.trim()) candidate.location = fields.location.value.trim();
       if (fields.end.value !== '') candidate.end = utcFromLocal(`${fields.endDate.value}T${fields.end.value}`);
@@ -207,7 +209,8 @@ export class CalendarWorkspace {
     let expiryTimer;
     const showCheck = checked => {
       clearTimeout(expiryTimer);
-      preview.replaceChildren(el('h3', 'Student timetable'));
+      preview.replaceChildren(el('h3', event?.groupId ? 'Group availability' : 'Student timetable'));
+      for (const participant of checked.participants || []) preview.append(el('p', `${participant.name}: ${participant.incomplete ? 'availability incomplete' : participant.conflicts.length ? 'conflicts' : 'no conflicts'}`));
       if (checked.past) preview.append(el('p', 'The selected starting time is in the past.', 'timetable-warning'));
       if (checked.incomplete) preview.append(el('p', 'Availability incomplete: missing timetable or pending course details.', 'timetable-warning'));
       for (const c of checked.classes) preview.append(el('p', `${c.localStart}–${c.localEnd} ${c.name} · ${c.location}`));
@@ -241,8 +244,13 @@ export class CalendarWorkspace {
     let previewRequest = 0;
     const updatePreview = async () => {
       const request = ++previewRequest; let rendered = false;
-      preview.hidden = !fields.studentId.value; if (preview.hidden) return;
+      preview.hidden = !fields.studentId.value && !event?.groupId; if (preview.hidden) return;
       try {
+        if (event?.groupId) {
+          const checked = await this.api(`/api/groups/${event.groupId}/check`, 'POST', { event: makeCandidate(), draftEvents: this.data.events });
+          if (request === previewRequest && dialog.open && !submit.disabled) showCheck(checked);
+          return;
+        }
         const student = this.students.find(s => s.id === fields.studentId.value); if (!student) throw new Error('Student unavailable.');
         const candidate = makeCandidate(); if (!candidate.end && candidate.durationMinutes === undefined) candidate.durationMinutes = 30;
         validateCalendar({ ...this.data, events: [candidate] });
@@ -293,8 +301,8 @@ export class CalendarWorkspace {
           if (name && !candidate.title.includes(name)) candidate.title = `${name} · ${candidate.title}`;
           candidate.categoryId = this.categories.find(c => c.name === 'Students')?.id || 'category-1';
         }
-        if (candidate.studentId) {
-          const checked = await this.api('/api/timetables/check', 'POST', { event: candidate, draftEvents: this.data.events }); showCheck(checked);
+        if (candidate.studentId || candidate.groupId) {
+          const checked = await this.api(candidate.groupId ? `/api/groups/${candidate.groupId}/check` : '/api/timetables/check', 'POST', { event: candidate, draftEvents: this.data.events }); showCheck(checked);
           if (checked.conflicts.length && !confirm(`This conversation conflicts with ${checked.conflicts.map(c => c.title).join(', ')}. Save this conflicting booking?`)) return;
           this.acknowledgements ||= {}; this.acknowledgements[candidate.id] = checked.acknowledgement;
         }

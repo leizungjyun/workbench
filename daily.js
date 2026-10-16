@@ -27,9 +27,12 @@ export class DailyStore {
   async read() {
     const previous = await this.readStored();
     const document = structuredClone(previous.document);
-    if (this.calendar && syncCalendarTasks(document, (await this.calendar.read()).document)) {
-      return this.write(previous, document);
+    let changed = false;
+    if (this.groups && !document.categories.some(c => c.id === 'category-group') && (await this.groups.list()).groups.length) {
+      document.categories.push({ id: 'category-group', name: 'Group', hidden: false }); changed = true;
     }
+    if (this.calendar) changed = syncCalendarTasks(document, (await this.calendar.read()).document) || changed;
+    if (changed) return this.write(previous, document);
     return previous;
   }
   async save(input) {

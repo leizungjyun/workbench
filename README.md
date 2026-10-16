@@ -49,6 +49,17 @@ Daily keeps dated task histories, subtasks, categories, notes, and completion st
 
 Calendar supports events, student conversations, class overlays, conflict review, and local reminders. Students supports profiles, meeting preparation, meeting records, goals, and timetable imports. Scheduling a student conversation creates a Calendar event in the Students category and a linked Daily record titled with the student’s name. Completing or reopening that Daily record updates Calendar’s completion indicator. Student note fields show raw Markdown while editing, then render the formatted preview in the same area after Done editing. Existing rich-text notes remain readable and editable. Each supervision record includes a Correction field. The Supervision Record section sits directly below Next Conversation, independently of the height of the Objectives sidebar, on desktop and mobile. Exports and private import files remain workspace data. The fixture under `tests/fixtures/` uses invented people and schedules.
 
+### Group sessions
+
+**Group** keeps shared supervision in a single record, linked from the participating students’ pages. Create a group from existing students and select a student leader. Students can belong to several groups; changing members or leaders preserves past sessions and action assignments.
+
+Prepare a **Workshop** or **Roundtable** under Next Session. Workshops initially select every member; roundtables initially select the leader. Click names to change the participants, keeping at least one selected. Starting or scheduling transfers the preparation into a session record. Discussion, Decisions, and Correction use raw Markdown while editing and render after **Done editing**. Objectives support milestones, deadlines, statuses, and links to sessions and actions. Follow-up actions can belong to named students, the group, or the supervisor.
+
+Scheduling checks every selected participant’s class timetable and existing Calendar bookings, shows incomplete availability, and offers shared available times. Conflicts require explicit confirmation and are checked again on save. Group bookings create one linked Calendar event and Daily record in the **Group** category. Rescheduling retains the record’s identity; Daily completion and reopening update Calendar. Cancelling a booking keeps its supervision notes. Open the authoritative group session from Calendar, Daily, student overviews, or global search.
+
+Sessions may have optional PDF, PPT, PPTX, or Keynote attachments, up to 100 MB per file. PDFs have a preview link; other presentations download in their original format. Files, group documents, and revision history stay in the private workspace under `.notebook/`. Detaching an attachment preserves the file for record versions. JSON exports contain metadata; download the presentation files separately. Group drafts, save conflicts, and duplicate editing tabs use the same protection as Students.
+
+
 To import a timetable document into an existing student record, stop the server and run:
 
 ```sh

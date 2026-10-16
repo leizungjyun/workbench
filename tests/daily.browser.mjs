@@ -17,7 +17,7 @@ test.beforeEach(async ({ page }) => {
   await fs.symlink(path.resolve('dist'), path.join(root, 'dist')); app = await createApp(root); await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve)); base = `http://127.0.0.1:${app.server.address().port}`;
   await page.goto(`${base}/?view=daily&date=2026-10-09`); await expect(work(page).locator('h1')).toHaveText('2026-10-09');
 });
-test.afterEach(async ({ context }) => { for (const page of context.pages()) await page.close(); await app.terminals.close(); await app.kernels.close(); await new Promise(resolve => app.server.close(resolve)); await fs.rm(root, { recursive: true, force: true }); });
+test.afterEach(async ({ context }) => { for (const page of context.pages()) await page.close(); await app.terminals.close(); await app.kernels.close(); app.server.closeAllConnections(); await new Promise(resolve => app.server.close(resolve)); await fs.rm(root, { recursive: true, force: true }); });
 
 test('tasks, formatting, optional details, student link, notes, and exports survive reload', async ({ page }) => {
   const errors = []; page.on('pageerror', e => errors.push(e.message));

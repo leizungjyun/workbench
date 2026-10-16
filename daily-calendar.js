@@ -15,12 +15,14 @@ export function syncCalendarTasks(doc, calendar, now = new Date()) {
     if (!category) { category = { id: 'category-5', name: 'Miscellaneous', hidden: false }; doc.categories.push(category); }
     return category.id;
   };
+  if (calendar.events.some(e => e.groupId) && !doc.categories.some(c => c.id === 'category-group')) doc.categories.push({ id: 'category-group', name: 'Group', hidden: false });
   for (const event of calendar.events) {
     const zone = event.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
     const { date, time } = localParts(event.start, zone), today = localParts(now, zone).date;
     const categoryId = doc.categories.some(c => c.id === event.categoryId) ? event.categoryId : misc();
     const source = [event.title, event.start, zone, categoryId, event.location || '', event.durationMinutes || null, event.studentId || ''];
     if (event.end) source.push(event.end);
+    if (event.groupId) source.push(event.groupId, event.groupSessionId, event.participantIds);
     const fingerprint = JSON.stringify(source);
     let task = doc.tasks.find(t => t.id === event.id);
     if (task && !task.calendarEvent) throw Object.assign(new Error('Calendar event ID conflicts with an existing Daily task.'), { status: 409 });
@@ -29,11 +31,11 @@ export function syncCalendarTasks(doc, calendar, now = new Date()) {
     const sourceDetails = [event.location, end ? `Ends: ${end.date} ${end.time}` : '', event.durationMinutes ? `Duration: ${event.durationMinutes} minutes` : ''].filter(Boolean).join('\n');
     if (!task) {
       task = newTask(event.id, date, event.title, categoryId); doc.tasks.push(task);
-      Object.assign(task.versions[0], { time, details: sourceDetails, studentId: event.studentId || '' });
+      Object.assign(task.versions[0], { time, details: sourceDetails, studentId: event.studentId || '', groupId: event.groupId || '', groupSessionId: event.groupSessionId || '', participantIds: event.participantIds || [] });
     } else {
       const changeDate = task.originDate > today ? (date < task.originDate ? date : task.originDate) : (date < task.originDate ? date : today);
       const previous = structuredClone(stateAt(task, changeDate) || task.versions[0]);
-      const patch = { text: event.title.trim(), time, categoryId, scheduledDate: date, studentId: event.studentId || '' };
+      const patch = { text: event.title.trim(), time, categoryId, scheduledDate: date, studentId: event.studentId || '', groupId: event.groupId || '', groupSessionId: event.groupSessionId || '', participantIds: event.participantIds || [] };
       if (previous.details === task.calendarEvent.details) patch.details = sourceDetails;
       if (task.calendarEvent.deleted && previous.status === 'cancelled') patch.status = 'open';
       if (changeDate < task.originDate) {

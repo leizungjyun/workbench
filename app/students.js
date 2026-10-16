@@ -9,8 +9,8 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(
 const download = (value, name) => { const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); const a = el('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
 const labels = { name: 'Name', dob: 'Date of birth', gkPlace: 'GK place (高考地)', email: 'Email', researchAreas: 'Research areas', program: 'Degree / program', entryYear: 'Entry year', schoolId: 'School' };
 export class StudentWorkspace {
-  constructor({ parent, api, notice, prepare, enter, navigate, schedule }) {
-    Object.assign(this, { parent, api, notice, prepare, enter, navigate, schedule });
+  constructor({ parent, api, notice, prepare, enter, navigate, schedule, entity = 'student', collection = 'students', validateDocument = validateStudent }) {
+    Object.assign(this, { parent, api, notice, prepare, enter, navigate, schedule, entity, collection, validateDocument });
     this.editingSections = new Set(); this.openSessions = new Set(); this.historyQuery = ''; this.filter = 'active'; this.rosterQuery = ''; this.blocked = false;
     window.addEventListener('pagehide', () => this.release());
     window.addEventListener('pageshow', e => { if (e.persisted && this.data) this.reclaim(); });
@@ -19,12 +19,12 @@ export class StudentWorkspace {
   }
   get url() { return this.data ? `?view=student&id=${this.data.id}` : '?view=students'; }
   get dirty() { return !!this.data && !this.readOnly && JSON.stringify(this.data) !== this.saved; }
-  draftKey() { return `student-draft:${this.data.id}`; }
+  draftKey() { return `${this.entity}-draft:${this.data.id}`; }
   cache() { if (!this.data || this.readOnly) return; try { if (this.dirty) localStorage.setItem(this.draftKey(), JSON.stringify({ document: this.data, revision: this.revision })); else localStorage.removeItem(this.draftKey()); } catch { /* Disk saves remain available. */ } }
   release() { this.unlock?.(); this.unlock = null; }
   async acquire(id) {
     this.release(); if (!navigator.locks) return false;
-    return new Promise((resolve, reject) => navigator.locks.request(`fieldnotes:student:${id}`, { ifAvailable: true }, async lock => {
+    return new Promise((resolve, reject) => navigator.locks.request(`fieldnotes:${this.entity}:${id}`, { ifAvailable: true }, async lock => {
       if (!lock) { resolve(false); return; }
       const held = new Promise(done => { this.unlock = done; }); resolve(true); await held;
     }).catch(reject));
@@ -35,7 +35,7 @@ export class StudentWorkspace {
     try {
       if (this.saving) await this.saving.catch(() => {});
       this.cache(); this.readOnly = !await this.acquire(this.data.id);
-      const latest = await this.api(`/api/students/${this.data.id}`); this.load(latest, true); this.renderDetail();
+      const latest = await this.api(`/api/${this.collection}/${this.data.id}`); this.load(latest, true); this.renderDetail();
     } catch (e) { this.notice(e.message); }
     finally { this.reclaiming = false; this.parent.inert = false; }
   }
@@ -45,9 +45,10 @@ export class StudentWorkspace {
     try {
       // Flush before reading summaries or revisiting the same student. Keep the old view if fetching fails.
       if (!await this.prepare()) return false;
-      const [academic, records, calendar] = await Promise.all([this.api('/api/timetables'), this.api('/api/students/export'), this.api('/api/calendar')]);
+      const [academic, records, calendar, groupRecords] = await Promise.all([this.api('/api/timetables'), this.api('/api/students/export'), this.api('/api/calendar'), this.api('/api/groups/export')]);
+      this.groupDocuments = groupRecords.groups;
       this.academic = academic; this.studentDocuments = records.students; this.calendar = calendar.document;
-      const result = id ? await this.api(`/api/students/${id}`) : await this.api('/api/students');
+      const result = id ? await this.api(`/api/${this.collection}/${id}`) : await this.api('/api/students');
       if (!await this.enter()) return false;
       this.close(); this.historyQuery = ''; this.openSessions.clear();
       if (id) { this.readOnly = !await this.acquire(id); this.load(result, true); this.renderDetail(); }
@@ -63,7 +64,7 @@ export class StudentWorkspace {
       try {
         const draft = JSON.parse(localStorage.getItem(this.draftKey()));
         if (draft?.document?.id === this.data.id && JSON.stringify(draft.document) !== this.saved) {
-          validateStudent(draft.document); this.data = draft.document; this.blocked = true; this.notice('Recovered an unsaved student draft. Review it and choose Retry save or resolve the disk conflict.');
+          this.validateDocument(draft.document); this.data = draft.document; this.blocked = true; this.notice(`Recovered an unsaved ${this.entity} draft. Review it and choose Retry save or resolve the disk conflict.`);
           this.conflict = draft.revision !== result.revision;
         } else this.conflict = false;
       } catch { this.notice('The browser draft could not be read. Disk data is preserved.'); }
@@ -78,11 +79,11 @@ export class StudentWorkspace {
     clearTimeout(this.timer);
     if (this.saving) { await this.saving; return this.save(); }
     if (!this.dirty) { if (!this.conflict) { this.blocked = false; this.updateStatus(); } return; }
-    if (this.conflict) throw new Error('Resolve the student disk conflict before saving or leaving.');
+    if (this.conflict) throw new Error(`Resolve the ${this.entity} disk conflict before saving or leaving.`);
     const document = clone(this.data), revision = this.revision;
     this.saving = (async () => {
       try {
-        const result = await this.api(`/api/students/${document.id}`, 'PUT', { document, revision });
+        const result = await this.api(`/api/${this.collection}/${document.id}`, 'PUT', { document, revision });
         this.saved = JSON.stringify(document); this.revision = result.revision; this.savedAt = result.savedAt; this.blocked = false; this.cache();
       } catch (e) { this.blocked = true; this.conflict = e.status === 409; this.cache(); this.notice(e.message); throw e; }
       finally { this.saving = null; this.updateStatus(); }
@@ -91,11 +92,11 @@ export class StudentWorkspace {
     if (this.dirty) this.timer = setTimeout(() => this.save().catch(() => {}), 750);
   }
   async checkExternal() {
-    if (!this.data || this.checking || this.saving || this.profileEditor?.open || document.querySelector('.timetable-dialog[open]')) return;
+    if (!this.data || this.checking || this.saving || this.profileEditor?.open || this.parent.querySelector('dialog[open]') || document.querySelector('.timetable-dialog[open]')) return;
     this.checking = true; const observed = this.data;
-    const stage = this.parent.querySelector('[data-current-stage]'); if (stage) stage.textContent = currentStage(observed.profile.entryYear);
+    const stage = this.parent.querySelector('[data-current-stage]'); if (stage) stage.textContent = currentStage(observed.profile?.entryYear);
     try {
-      const latest = await this.api(`/api/students/${observed.id}`);
+      const latest = await this.api(`/api/${this.collection}/${observed.id}`);
       if (this.data !== observed || this.saving || latest.revision === this.revision) return;
       if (this.dirty) { clearTimeout(this.timer); this.blocked = this.conflict = true; this.cache(); this.updateStatus(); }
       else { this.load(latest); this.renderDetail(); }
@@ -212,8 +213,8 @@ export class StudentWorkspace {
     const actions = el('div', '', 'student-buttons'); actions.append(this.button('All students', () => this.navigate()), this.button(d.archived ? 'Unarchive student' : 'Archive student', async () => { d.archived = !d.archived; this.changed(); this.renderDetail(); await this.save(); })); head.append(actions);
     const statusRow = el('div', '', 'student-status-row'); this.status = el('span'); this.status.setAttribute('role', 'status'); this.saveButton = this.button('Save', () => this.save()); statusRow.append(this.status, this.saveButton, this.button('Export draft', () => download(this.data, `student-${d.id}-draft.json`)));
     this.conflictBar = el('div', '', 'student-conflict'); this.conflictBar.setAttribute('role', 'alert');
-    this.conflictBar.append(el('span', 'Your draft is preserved.'), this.button('Compare', () => this.compare()), this.button('Reload disk version', async () => { if (!confirm('Discard your draft and reload the disk version?')) return; const latest = await this.api(`/api/students/${d.id}`); localStorage.removeItem(this.draftKey()); this.load(latest); this.renderDetail(); }), this.button('Overwrite with draft', async () => {
-      const latest = await this.api(`/api/students/${d.id}`); await this.compare(latest);
+    this.conflictBar.append(el('span', 'Your draft is preserved.'), this.button('Compare', () => this.compare()), this.button('Reload disk version', async () => { if (!confirm('Discard your draft and reload the disk version?')) return; const latest = await this.api(`/api/${this.collection}/${d.id}`); localStorage.removeItem(this.draftKey()); this.load(latest); this.renderDetail(); }), this.button('Overwrite with draft', async () => {
+      const latest = await this.api(`/api/${this.collection}/${d.id}`); await this.compare(latest);
       if (!confirm('Replace the displayed disk version with your current draft?')) return;
       this.revision = latest.revision; this.conflict = false; await this.save();
     }));
@@ -224,6 +225,7 @@ export class StudentWorkspace {
     if(d.profile.coursesCompleted){const fact=el('div');fact.append(el('dt','Course status'),el('dd','All courses completed'));facts.append(fact);}
     const stage = currentStage(d.profile.entryYear); if (stage) { const fact = el('div'); fact.append(el('dt', 'Current stage'), el('dd', stage)); fact.lastChild.dataset.currentStage = ''; facts.append(fact); }
     profile.append(facts);
+    profile.append(this.groupOverview());
     const columns = el('div', '', 'student-columns'); this.preparation = el('section', '', 'student-preparation student-panel'); this.renderPreparation();
     const history = el('section', '', 'student-history'); const historyHead = this.sectionHeading('Supervision Record', 'history'); if (this.editing('history')) historyHead.append(this.button('Add meeting', () => { this.addSession(); this.changed(); this.renderDetail(); }));
     const search = el('input'); search.type = 'search'; search.placeholder = 'Search meeting records…'; search.setAttribute('aria-label', 'Search meeting records'); search.value = this.historyQuery;
@@ -243,6 +245,21 @@ export class StudentWorkspace {
     if (this.readOnly) for (const b of [...profile.querySelectorAll('button'), ...columns.querySelectorAll('button'), actions.lastChild]) if (!b.classList.contains('student-navigation')) b.disabled = true;
     this.updateStatus();
   }
+  groupOverview() {
+    const overview = el('section', '', 'student-group-overview'), id = this.data.id;
+    const relevant = (this.groupDocuments || []).filter(g => g.memberIds.includes(id) || g.sessions.some(s => s.participantIds.includes(id) || s.actions.some(a => a.assigneeIds.includes(id))));
+    if (!relevant.length) return overview;
+    overview.append(el('h3', 'Group supervision')); const list = el('ul');
+    const link = (g, label, sessionId) => { const a = el('a', label); a.href = `?view=group&id=${g.id}${sessionId ? `&session=${sessionId}` : ''}`; a.onclick = async e => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); if (await this.flush()) location.href = a.href; }; const li = el('li'); li.append(a); list.append(li); };
+    for (const g of relevant) {
+      link(g, `${g.name}${g.archived ? ' (archived)' : ''}${g.memberIds.includes(id) ? (g.leaderId === id ? ' · Student leader' : ' · Member') : ' · Past participant'}`);
+      for (const session of g.sessions) {
+        if (session.participantIds.includes(id)) link(g, `${session.date} · ${session.type} · ${session.title || 'Untitled session'}`, session.id);
+        for (const action of session.actions.filter(a => a.owner === 'Students' && a.assigneeIds.includes(id))) link(g, `${action.done ? '✓' : '○'} ${action.text || 'Untitled action'}${action.dueDate ? ` · Due ${action.dueDate}` : ''}`, session.id);
+      }
+    }
+    overview.append(list); return overview;
+  }
   updateStatus() {
     if (!this.status) return;
     this.status.textContent = this.readOnly ? 'Read-only' : this.saving ? 'Saving…' : this.conflict ? 'Conflict · draft preserved' : this.blocked ? 'Save failed · draft preserved' : this.dirty ? 'Unsaved changes' : `Saved to disk${this.savedAt ? ` · ${new Date(this.savedAt).toLocaleString()}` : ''}`;
@@ -250,8 +267,8 @@ export class StudentWorkspace {
     this.conflictBar.hidden = !this.conflict;
   }
   async compare(latest) {
-    latest ||= await this.api(`/api/students/${this.data.id}`);
-    const dialog = el('dialog', '', 'student-compare'); dialog.append(el('h2', 'Compare student records'));
+    latest ||= await this.api(`/api/${this.collection}/${this.data.id}`);
+    const dialog = el('dialog', '', 'student-compare'); dialog.append(el('h2', `Compare ${this.entity} records`));
     const columns = el('div', '', 'student-compare-columns'); for (const [label, value] of [['Your draft', this.data], ['Disk version', latest.document]]) { const side = el('section'); side.append(el('h3', label), el('pre', JSON.stringify(value, null, 2))); columns.append(side); } dialog.append(columns, this.button('Close', () => dialog.close())); document.body.append(dialog); dialog.showModal();
     return new Promise(resolve => dialog.addEventListener('close', () => { dialog.remove(); resolve(latest); }, { once: true }));
   }

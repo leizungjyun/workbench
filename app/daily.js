@@ -171,6 +171,7 @@ export class DailyWorkspace {
         if (metadata.length) item.append(el('p', metadata.join(' · '), 'daily-muted'));
         if (state.details) { const rich = el('div', '', 'daily-preview-rich'); renderMarkdown(rich, state.details); item.append(rich); }
         for (const subtask of state.subtasks) item.append(el('p', `${subtask.done ? '✓' : '○'} ${subtask.text}`, 'daily-preview-subtask'));
+        if (state.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${state.groupId}&session=${state.groupSessionId}`; item.append(link); }
         section.append(item);
       }
       this.dayPreview.append(section);
@@ -183,6 +184,7 @@ export class DailyWorkspace {
     const title = this.field('Task', state.text, value => { if (value.trim()) { this.patch(task, { text: value }); checkbox.setAttribute('aria-label', `Complete ${value}`); } }); title.classList.add('daily-task-title'); top.append(checkbox, title, this.button(this.expanded.has(task.id) ? 'Hide details' : 'Details', () => { if (this.expanded.has(task.id)) this.expanded.delete(task.id); else this.expanded.add(task.id); this.render(); }), this.button('Remove', () => this.transition(task, { status: 'cancelled', scheduledDate: this.date }), true)); row.append(top);
     const latest = task.versions.at(-1); const meta = el('div', '', 'daily-muted');
     meta.textContent = `${task.originDate < this.date ? `From ${task.originDate} · ` : ''}${state.status}${state.scheduledDate > this.date ? ` · Scheduled ${state.scheduledDate}` : ''}${state.time ? ` · ${state.time}` : ''}${state.deadline ? ` · Due ${state.deadline}` : ''}${latest.date > this.date ? ` · Later ${latest.status} on ${latest.date}` : ''}`; row.append(meta);
+    if (state.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${state.groupId}&session=${state.groupSessionId}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; row.append(link); }
     const event = this.calendar?.events.find(e => e.id === task.id && e.studentId);
     if (event) {
       const student = this.studentDocuments.find(s => s.id === event.studentId);
