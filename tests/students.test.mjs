@@ -185,3 +185,29 @@ test('legacy supervision records accept optional correction and next conversatio
     const bad = structuredClone(item.document); mutate(bad.sessions[0]); assert.throws(() => validateStudent(bad), { status: 400 });
   }
 });
+
+test('Markdown notes preserve source through saves, search and export alongside legacy rich text', async t => {
+  const { students } = await fixture(t); let item = await students.create({ name: 'Synthetic Markdown' });
+  const source = '## Progress\n\n**Evidence**\n\n```python\nprint(1)\n```\n';
+  item.document.preparation.agenda = { type: 'markdown', text: source };
+  validateStudent(item.document); item = await students.save(item.document.id, item);
+  assert.equal((await students.read(item.document.id)).document.preparation.agenda.text, source);
+  assert.equal((await students.export()).students[0].preparation.agenda.text, source);
+  assert.equal((await students.search('Evidence'))[0].count, 1);
+  validateRichText({ type: 'markdown', text: '' });
+  for (const bad of [{ type: 'markdown', text: 1 }, { type: 'markdown', text: '', extra: true }, { type: 'markdown', text: 'x'.repeat(1000001) }]) assert.throws(() => validateRichText(bad));
+});
+
+test('legacy source conversion preserves formatting, nested lists, hard breaks and literal Markdown', async () => {
+  const { markdownSource } = await import('../app/student-markdown.js');
+  assert.equal(markdownSource(rich('Existing notes')), '**Existing notes**');
+  const paragraph = text => ({ type: 'paragraph', content: [{ type: 'text', text }] });
+  const doc = { type: 'doc', content: [
+    { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Progress' }] },
+    { type: 'orderedList', attrs: { start: 3 }, content: [{ type: 'listItem', content: [paragraph('Parent'), { type: 'bulletList', content: [{ type: 'listItem', content: [paragraph('Child')] }] }] }] },
+    { type: 'paragraph', content: [{ type: 'text', text: 'Link', marks: [{ type: 'italic' }, { type: 'link', attrs: { href: 'https://example.com/a(b)' } }] }, { type: 'hardBreak' }, { type: 'text', text: '**literal**' }] }
+  ] };
+  validateRichText(doc);
+  assert.equal(markdownSource(doc), '## Progress\n\n3. Parent\n   \n   - Child\n\n[*Link*](https://example.com/a%28b%29)  \n\\*\\*literal\\*\\*');
+  const source = '## Raw\n\n**text**\n'; assert.equal(markdownSource({ type: 'markdown', text: source }), source);
+});

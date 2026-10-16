@@ -1,9 +1,6 @@
-import { StudentMarkdown } from './student-markdown.js';
+import { markdownSource } from './student-markdown.js';
 import { timetablePanel } from './timetables.js';
-import { Editor, generateHTML } from '@tiptap/core';
-import StarterKit from '@tiptap/starter-kit';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+import { renderMarkdown } from './render.js';
 import { emptyText, richText, profileFields, validateStudent, currentStage } from '../student-model.js';
 import './students.css';
 const el = (tag, value = '', cls = '') => { const n = document.createElement(tag); n.textContent = value; if (cls) n.className = cls; return n; };
@@ -14,7 +11,7 @@ const labels = { name: 'Name', dob: 'Date of birth', gkPlace: 'GK place (高考�
 export class StudentWorkspace {
   constructor({ parent, api, notice, prepare, enter, navigate, schedule }) {
     Object.assign(this, { parent, api, notice, prepare, enter, navigate, schedule });
-    this.editingSections = new Set(); this.editors = []; this.openSessions = new Set(); this.historyQuery = ''; this.filter = 'active'; this.rosterQuery = ''; this.blocked = false;
+    this.editingSections = new Set(); this.openSessions = new Set(); this.historyQuery = ''; this.filter = 'active'; this.rosterQuery = ''; this.blocked = false;
     window.addEventListener('pagehide', () => this.release());
     window.addEventListener('pageshow', e => { if (e.persisted && this.data) this.reclaim(); });
     window.addEventListener('focus', () => this.checkExternal());
@@ -24,7 +21,6 @@ export class StudentWorkspace {
   get dirty() { return !!this.data && !this.readOnly && JSON.stringify(this.data) !== this.saved; }
   draftKey() { return `student-draft:${this.data.id}`; }
   cache() { if (!this.data || this.readOnly) return; try { if (this.dirty) localStorage.setItem(this.draftKey(), JSON.stringify({ document: this.data, revision: this.revision })); else localStorage.removeItem(this.draftKey()); } catch { /* Disk saves remain available. */ } }
-  destroyEditors() { this.editors.forEach(e => e.destroy()); this.editors = []; }
   release() { this.unlock?.(); this.unlock = null; }
   async acquire(id) {
     this.release(); if (!navigator.locks) return false;
@@ -43,7 +39,7 @@ export class StudentWorkspace {
     } catch (e) { this.notice(e.message); }
     finally { this.reclaiming = false; this.parent.inert = false; }
   }
-  close() { this.editingSections.clear(); clearTimeout(this.timer); this.release(); this.destroyEditors(); this.data = null; this.saved = ''; this.blocked = false; this.conflict = false; this.readOnly = false; this.undo = null; this.status = null; }
+  close() { this.editingSections.clear(); clearTimeout(this.timer); this.release(); this.data = null; this.saved = ''; this.blocked = false; this.conflict = false; this.readOnly = false; this.undo = null; this.status = null; }
   async flush() { try { await this.save(); return !this.dirty; } catch (e) { this.notice(e.message); return false; } }
   async open(id, push = true) {
     try {
@@ -138,35 +134,18 @@ export class StudentWorkspace {
     c.onchange = () => { update(c.checked); this.changed(); this.refreshPreparation(); }; wrap.append(c, el('span', label)); return wrap;
   }
   rich(label, value, update) {
+    const source = markdownSource(value);
     if (this.previewing) {
       const wrap = el('section', '', 'student-rich-preview'); wrap.append(el('h3', label));
       const content = el('div', '', 'student-rich-content');
-      if (richText(value).trim()) content.innerHTML = DOMPurify.sanitize(generateHTML(value, [StarterKit])); else content.textContent = 'No notes yet.';
+      if (source.trim()) renderMarkdown(content, source); else content.textContent = 'No notes yet.';
       wrap.append(content); return wrap;
     }
-    const wrap = el('section', '', 'student-rich'); wrap.append(el('label', label), el('small', 'Markdown: headings, **bold**, *italic*, lists and links. Type or paste to format in place.', 'student-markdown-hint')); const toolbar = el('div', '', 'student-toolbar'); toolbar.setAttribute('role', 'toolbar'); toolbar.setAttribute('aria-label', `${label} formatting`);
-    const host = el('div', '', 'student-rich-host'); host.setAttribute('aria-label', label);
-    wrap.append(toolbar, host);
-    const editor = new Editor({ element: host, editable: !this.readOnly, extensions: [StudentMarkdown, StarterKit.configure({ heading: { levels: [1, 2, 3] }, code: false, codeBlock: false, blockquote: false, horizontalRule: false, strike: false, underline: false, link: { openOnClick: false, protocols: ['http', 'https', 'mailto'] } })], content: value, editorProps: { attributes: { 'aria-label': label, role: 'textbox', 'aria-multiline': 'true', spellcheck: 'true' }, transformPastedHTML: html => DOMPurify.sanitize(html), handlePaste: (view, event) => {
-      const text = event.clipboardData?.getData('text/plain');
-      if (!text || event.clipboardData.getData('text/html')) return false;
-      event.preventDefault();
-      editor.commands.insertContent(DOMPurify.sanitize(marked.parse(text, { breaks: true }), { ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'strong', 'em', 'ul', 'ol', 'li', 'a'], ALLOWED_ATTR: ['href', 'start'] }));
-      return true;
-    } }, onUpdate: () => { update(editor.getJSON()); this.changed(); }, onSelectionUpdate: () => sync() });
-    const controls = [
-      ['Heading', () => editor.chain().focus().toggleHeading({ level: 2 }).run(), () => editor.isActive('heading')],
-      ['Bold', () => editor.chain().focus().toggleBold().run(), () => editor.isActive('bold')],
-      ['Italic', () => editor.chain().focus().toggleItalic().run(), () => editor.isActive('italic')],
-      ['Bullets', () => editor.chain().focus().toggleBulletList().run(), () => editor.isActive('bulletList')],
-      ['Numbered list', () => editor.chain().focus().toggleOrderedList().run(), () => editor.isActive('orderedList')],
-      ['Link', () => { const href = prompt('Link URL (http, https, or mailto). Leave blank to remove:', editor.getAttributes('link').href || ''); if (href === null) return; if (!href) editor.chain().focus().unsetLink().run(); else if (/^(https?:\/\/|mailto:)/i.test(href) && !/[\x00-\x20]/.test(href)) editor.chain().focus().setLink({ href }).run(); else this.notice('Use an http, https, or mailto link.'); }, () => editor.isActive('link')],
-      ['Undo', () => editor.chain().focus().undo().run()], ['Redo', () => editor.chain().focus().redo().run()]
-    ];
-    const buttons = controls.map(([name, action]) => { const b = this.button(name, () => { action(); sync(); }); b.disabled = !!this.readOnly; toolbar.append(b); return b; });
-    const sync = () => controls.forEach((c, i) => { if (c[2]) buttons[i].setAttribute('aria-pressed', String(c[2]())); }); sync();
-    if (this.readOnly) { const html = DOMPurify.sanitize(editor.getHTML()); editor.destroy(); host.innerHTML = html; host.classList.add('student-rich-readonly'); host.tabIndex = 0; }
-    else this.editors.push(editor); return wrap;
+    const wrap = el('label', '', 'student-rich'); wrap.append(el('span', label));
+    const input = el('textarea', '', 'student-markdown-source'); input.value = source;
+    input.setAttribute('aria-label', label); input.spellcheck = true; input.disabled = !!this.readOnly;
+    input.oninput = () => { update({ type: 'markdown', text: input.value }); this.changed(); };
+    wrap.append(input); return wrap;
   }
   header(title, subtitle) { const head = el('header', '', 'students-heading'); const copy = el('div'); copy.append(el('h1', title)); if (subtitle) copy.append(el('p', subtitle)); head.append(copy); return head; }
   profileDialog(creating = false) {
@@ -202,7 +181,7 @@ export class StudentWorkspace {
   }
   async createStudent() { this.profileDialog(true); }
   renderRoster() {
-    this.destroyEditors(); const head = this.header('Students', 'Prepare the next conversation. Keep the long view.'); const actions = el('div', '', 'student-buttons'); actions.append(this.button('Export all records', async () => download(await this.api('/api/students/export'), 'workbench-students.json')), this.button('Add student', () => this.createStudent(), 'primary')); head.append(actions);
+    const head = this.header('Students', 'Prepare the next conversation. Keep the long view.'); const actions = el('div', '', 'student-buttons'); actions.append(this.button('Export all records', async () => download(await this.api('/api/students/export'), 'workbench-students.json')), this.button('Add student', () => this.createStudent(), 'primary')); head.append(actions);
     const controls = el('div', '', 'student-list-controls');
     const search = this.field('Search students', this.rosterQuery, value => { this.rosterQuery = value; this.drawCards(); }, 'search');
     controls.append(search, this.select('Show students', this.filter, [['active', 'Active'], ['archived', 'Archived'], ['all', 'All']], value => { this.filter = value; this.drawCards(); }));
@@ -228,7 +207,7 @@ export class StudentWorkspace {
     if (!students.length) this.cards.append(el('p', 'No students here yet. Add a student or change your search.', 'student-empty'));
   }
   renderDetail() {
-    this.destroyEditors(); const d = this.data;
+    const d = this.data;
     const head = this.header(d.profile.name); this.headingName = head.querySelector('h1');
     const actions = el('div', '', 'student-buttons'); actions.append(this.button('All students', () => this.navigate()), this.button(d.archived ? 'Unarchive student' : 'Archive student', async () => { d.archived = !d.archived; this.changed(); this.renderDetail(); await this.save(); })); head.append(actions);
     const statusRow = el('div', '', 'student-status-row'); this.status = el('span'); this.status.setAttribute('role', 'status'); this.saveButton = this.button('Save', () => this.save()); statusRow.append(this.status, this.saveButton, this.button('Export draft', () => download(this.data, `student-${d.id}-draft.json`)));
@@ -318,7 +297,7 @@ export class StudentWorkspace {
   sessionCard(s) {
     const card = el('details', '', 'student-session student-panel'); card.dataset.session = s.id; card.open = this.openSessions.has(s.id);
     const summary = el('summary', `${s.date} · ${s.title || 'Untitled meeting'}`); card.append(summary);
-    // Create rich-text editors only when a record is opened, keeping long histories inexpensive.
+    // Mount note previews or Markdown fields only when a record is opened.
     let mounted = false;
     const mount = () => {
     if (mounted) return; mounted = true; this.previewing = !this.editing('history');

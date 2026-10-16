@@ -24,17 +24,9 @@
 .student-session { margin-top: 14px; padding: 0; overflow: hidden; }
 .student-session > summary { padding: 16px 20px; font-weight: 600; cursor: pointer; font-size: 14px; }
 .student-session-body { padding: 0 20px 20px; display: grid; gap: 14px; }
-.student-rich { margin: 14px 0; min-width: 0; }
-.student-rich > label { display: block; font-size: 11px; color: #68786a; margin-bottom: 6px; }
-.student-toolbar { display: flex; flex-wrap: wrap; gap: 3px; padding: 5px; border: 1px solid #d8dfd1; border-bottom: 0; border-radius: 6px 6px 0 0; background: #f5f6ee; }
-.student-toolbar button { padding: 4px 7px; font-size: 10px; background: transparent; border-color: transparent; }
-.student-toolbar button[aria-pressed=true] { background: #dfe9da; border-color: #bed0b6; }
-.student-rich-host { border: 1px solid #d8dfd1; border-radius: 0 0 6px 6px; background: #fffefc; }
-.student-rich-readonly, .student-rich-host .tiptap { padding: 10px 12px; min-height: 85px; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
-.student-rich-host .tiptap p { margin: 0 0 8px; }
-.student-rich-host .tiptap h1, .student-rich-host .tiptap h2, .student-rich-host .tiptap h3 { margin: 12px 0 8px; }
-.student-rich-host a { color: #2d5745; text-decoration: underline; }
-.student-rich-host ul, .student-rich-host ol { padding-left: 24px; }
+.student-rich { display: block; margin: 14px 0; min-width: 0; }
+.student-rich > span { display: block; font-size: 11px; color: #68786a; margin-bottom: 6px; }
+.student-markdown-source { display: block; width: 100%; box-sizing: border-box; min-height: 150px; resize: vertical; padding: 12px; border: 1px solid #d8dfd1; border-radius: 6px; background: #fffefc; color: #283e33; font: 13px/1.7 "SFMono-Regular", Consolas, monospace; tab-size: 2; }
 .student-check { display: flex; gap: 8px; align-items: center; font-size: 12px; margin: 8px 0; }
 .student-check input { accent-color: #2d5745; }
 .student-action { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(100px, .5fr); gap: 10px; padding: 12px 0; border-top: 1px solid #e6e9df; }
@@ -99,5 +91,3 @@
   .sidebar-open #toggle-sidebar.student-navigation-toggle { display: none; }
   .students-heading { padding-left: 30px; }
 }
-
-.student-markdown-hint { display: block; color: #707c71; font-size: 11px; margin-bottom: 8px; }

@@ -3,7 +3,7 @@ import { validateStudentTimetables } from './timetable-model.js';
 export const emptyText = () => ({ type: 'doc', content: [{ type: 'paragraph' }] });
 export const profileFields = ['name', 'dob', 'gkPlace', 'email', 'researchAreas', 'program', 'entryYear', 'schoolId'];
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-export const richText = node => node?.type === 'text' ? node.text : (node?.content || []).map(richText).join(node?.type === 'doc' ? '\n' : '');
+export const richText = node => ['text', 'markdown'].includes(node?.type) ? node.text : (node?.content || []).map(richText).join(node?.type === 'doc' ? '\n' : '');
 export function newStudent(id, name) {
   return { schemaVersion: 1, id, archived: false, profile: Object.fromEntries(profileFields.map(key => [key, key === 'name' ? name : ''])), preparation: { date: '', agenda: emptyText() }, sessions: [], objectives: [] };
 }
@@ -24,6 +24,9 @@ export function birthDate(value) {
   calendarDate(value, 'date of birth (YYYY-MM or YYYY-MM-DD)');
 }
 export function validateRichText(doc) {
+  if (doc?.type === 'markdown') {
+    keys(doc, ['type', 'text'], 'Markdown'); string(doc.text, 'Markdown text', 1000000); return doc;
+  }
   if (doc?.type !== 'doc') invalid('Rich text must be a document.');
   let count = 0;
   const visit = (node, depth = 0) => {

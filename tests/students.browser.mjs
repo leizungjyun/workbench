@@ -40,10 +40,9 @@ test('profile, formatted notes, objectives, milestones and preparation survive r
   await page.getByRole('button', { name: 'Save profile', exact: true }).click();
   await goal(page); await rich(page, 'Objective description', '研究方向和方法'); await page.getByLabel('Target date', { exact: true }).fill('2027-02-01'); await page.getByLabel('Objective status', { exact: true }).selectOption('In progress');
   await page.getByRole('button', { name: 'Add milestone', exact: true }).click(); await page.getByLabel('Milestone', { exact: true }).fill('Literature review'); await page.getByLabel('Milestone completed', { exact: true }).check();
-  await page.getByLabel('Next meeting', { exact: true }).fill('2026-10-16'); await rich(page, 'Next meeting agenda', '讨论实验设计');
-  const agenda = page.getByRole('textbox', { name: 'Next meeting agenda', exact: true }); await agenda.press('ControlOrMeta+A'); await page.getByRole('toolbar', { name: 'Next meeting agenda formatting' }).getByRole('button', { name: 'Bold', exact: true }).click();
+  await page.getByLabel('Next meeting', { exact: true }).fill('2026-10-16'); await rich(page, 'Next meeting agenda', '**讨论实验设计**');
   await saved(page); await page.getByRole('button', { name: 'Start meeting', exact: true }).click(); await expect(page.getByLabel('Next meeting', { exact: true })).toHaveValue('');
-  await expect(page.getByRole('textbox', { name: 'Discussion', exact: true })).toContainText('讨论实验设计'); await expect(page.getByRole('textbox', { name: 'Discussion', exact: true }).locator('strong')).toContainText('讨论实验设计');
+  await expect(page.getByRole('textbox', { name: 'Discussion', exact: true })).toHaveValue('**讨论实验设计**');
   await page.getByLabel('Meeting title', { exact: true }).fill('Experiment design'); await rich(page, 'Decisions', '先做基线');
   await action(page); await page.getByLabel('Owner', { exact: true }).selectOption('Supervisor'); await page.getByLabel('Due date', { exact: true }).fill('2026-10-20');
   const goalId = (await disk(page)).objectives[0].id; await page.getByLabel('Linked objective', { exact: true }).selectOption(goalId);
@@ -112,9 +111,9 @@ test('two tabs coordinate student ownership and reclaim after notebook navigatio
   await duplicate.getByRole('button', { name: 'All students', exact: true }).click(); await expect(duplicate.getByLabel('Search students', { exact: true })).toBeEnabled();
 });
 
-test('mobile layout, keyboard save, numbered lists, links and failed meeting-start recovery', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 }); await create(page); await goal(page); await rich(page, 'Next meeting agenda', 'Discuss baseline'); await page.getByRole('toolbar', { name: 'Next meeting agenda formatting' }).getByRole('button', { name: 'Numbered list', exact: true }).click(); await page.keyboard.press('ControlOrMeta+S'); await saved(page);
-  const agenda = page.getByRole('textbox', { name: 'Next meeting agenda', exact: true }); await agenda.click(); await agenda.press('ControlOrMeta+A'); page.once('dialog', d => d.accept('https://example.com/paper')); await page.getByRole('toolbar', { name: 'Next meeting agenda formatting' }).getByRole('button', { name: 'Link', exact: true }).click(); await saved(page); expect((await disk(page)).preparation.agenda.content[0].type).toBe('orderedList');
+test('mobile layout, keyboard save, Markdown source and failed meeting-start recovery', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await create(page); await goal(page); await rich(page, 'Next meeting agenda', '1. [Discuss baseline](https://example.com/paper)'); await page.keyboard.press('ControlOrMeta+S'); await saved(page);
+  expect((await disk(page)).preparation.agenda).toEqual({ type: 'markdown', text: '1. [Discuss baseline](https://example.com/paper)' });
   await page.getByLabel('Next meeting', { exact: true }).fill('2026-10-16'); await saved(page);
   await page.route('**/api/students/*', async route => { if (route.request().method() === 'PUT') await route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Offline"}' }); else await route.continue(); });
   await page.getByRole('button', { name: 'Start meeting', exact: true }).click(); await expect(work(page).getByRole('status')).toContainText('Save failed'); await expect(page.getByLabel('Next meeting', { exact: true })).toHaveValue('2026-10-16'); expect((await disk(page)).sessions).toHaveLength(0);
@@ -178,9 +177,7 @@ test('sections open as formatted previews with explicit edit controls', async ({
   const tops = await page.locator('.student-profile-summary > div').evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect().top));
   expect(new Set(tops).size).toBe(1);
   await editSections(page);
-  await page.getByLabel('Next meeting', { exact: true }).fill('2026-10-16'); await rich(page, 'Next meeting agenda', '讨论方法');
-  await page.getByRole('textbox', { name: 'Next meeting agenda', exact: true }).press('ControlOrMeta+A');
-  await page.getByRole('toolbar', { name: 'Next meeting agenda formatting' }).getByRole('button', { name: 'Bold', exact: true }).click();
+  await page.getByLabel('Next meeting', { exact: true }).fill('2026-10-16'); await rich(page, 'Next meeting agenda', '**讨论方法**');
   await goal(page, 'Preview objective'); await rich(page, 'Objective description', '长期方向');
   await page.getByRole('button', { name: 'Add milestone', exact: true }).click(); await page.getByLabel('Milestone', { exact: true }).fill('Read literature'); await page.getByLabel('Milestone completed', { exact: true }).check();
   await page.getByRole('button', { name: 'Add meeting', exact: true }).click(); await rich(page, 'Discussion', '指导记录'); await action(page, 'Review results'); await page.getByLabel('Preview objective', { exact: true }).check();
@@ -245,26 +242,32 @@ test('student scheduling creates a named Students Daily record and Daily complet
   await expect(page.locator(`[data-event="${event.id}"]`).first()).toContainText('Completed in Daily');
 });
 
-test('supervision notes format Markdown in place and preserve correction blocks', async ({ page }) => {
+test('notes show exact Markdown source while editing and render only after Done editing', async ({ page }) => {
   await create(page, 'Synthetic Grace');
   await page.getByRole('button', { name: 'Add meeting', exact: true }).click();
-  const discussion = work(page).getByRole('textbox', { name: 'Discussion', exact: true });
-  await discussion.focus(); await page.keyboard.type('## Progress'); await page.keyboard.press('Enter');
-  await page.keyboard.type('**Evidence**'); await page.keyboard.press('Space');
-  await expect(discussion.locator('h2')).toHaveText('Progress');
-  await expect(discussion.locator('strong')).toHaveText('Evidence');
-  await page.keyboard.type('[Source](https://example.com)');
-  await expect(discussion.locator('a')).toHaveText('Source');
-  await expect(discussion.locator('a')).toHaveAttribute('href', 'https://example.com');
-  const correction = work(page).getByRole('textbox', { name: 'Correction', exact: true });
-  // A real clipboard data transfer exercises the editor's Markdown paste handler.
-  await correction.evaluate(node => { const clipboardData = new DataTransfer(); clipboardData.setData('text/plain', '**Corrected** result\n\n- Recheck baseline'); node.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true })); });
-  await expect(correction.locator('strong')).toHaveText('Corrected'); await expect(correction.locator('li')).toContainText('Recheck baseline');
+  const source = '## Progress\n\n**Evidence** and *analysis*.\n\n- [Source](https://example.com)\n- Second item\n\n```python\nprint("baseline")\n```';
+  const correctionSource = '**Corrected** result\n\n- Recheck baseline';
+  await rich(page, 'Discussion', source); await rich(page, 'Correction', correctionSource);
+  await expect(work(page).getByRole('textbox', { name: 'Discussion', exact: true })).toHaveValue(source);
+  await expect(work(page).getByRole('textbox', { name: 'Correction', exact: true })).toHaveValue(correctionSource);
+  await expect(work(page).locator('.student-session .student-rich-preview')).toHaveCount(0);
+  await expect(work(page).getByRole('toolbar')).toHaveCount(0);
   await saved(page);
-  const doc = await disk(page); expect(doc.sessions[0].correction.content[0].content[0].marks[0].type).toBe('bold');
-  expect(doc.sessions[0].nextConversation).toBeUndefined();
-  await page.reload(); await expect(work(page).locator('.student-session')).toContainText('Corrected');
-  await expect(work(page).locator('.student-next-conversation')).toHaveCount(0);
+  expect((await disk(page)).sessions[0].discussion).toEqual({ type: 'markdown', text: source });
+  await page.getByRole('button', { name: 'Done editing supervision record', exact: true }).click();
+  const record = work(page).locator('.student-session');
+  await expect(record.locator('textarea')).toHaveCount(0);
+  await expect(record.getByRole('heading', { name: 'Progress', exact: true })).toBeVisible();
+  await expect(record.locator('strong')).toHaveText(['Evidence', 'Corrected']);
+  await expect(record.getByRole('link', { name: 'Source', exact: true })).toHaveAttribute('href', 'https://example.com');
+  await expect(record.locator('pre code')).toContainText('print("baseline")');
+  await page.getByRole('button', { name: 'Edit supervision record', exact: true }).click();
+  await expect(work(page).getByRole('textbox', { name: 'Discussion', exact: true })).toHaveValue(source);
+  await page.getByRole('button', { name: 'Done editing supervision record', exact: true }).click();
+  await page.reload(); await expect(work(page).locator('.student-session strong')).toHaveText(['Evidence', 'Corrected']);
+  await editSections(page);
+  await expect(work(page).getByRole('textbox', { name: 'Discussion', exact: true })).toHaveValue(source);
+  await expect(work(page).getByRole('textbox', { name: 'Correction', exact: true })).toHaveValue(correctionSource);
   await work(page).getByLabel('Search meeting records', { exact: true }).fill('Corrected');
   await expect(work(page).locator('.student-session:visible')).toHaveCount(1);
 });
@@ -290,4 +293,22 @@ test('supervision follows preparation directly even beside tall objectives, on d
     await expect(page.locator('.student-session .student-next-conversation')).toHaveCount(0);
     await page.screenshot({ path: `/private/tmp/workbench-supervision-layout-${width}.png`, fullPage: true });
   }
+});
+
+
+test('legacy formatted notes open as Markdown source and keep their original data until edited', async ({ page }) => {
+  const item = await app.students.create({ name: 'Synthetic legacy notes' });
+  item.document.preparation.agenda = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Existing notes', marks: [{ type: 'bold' }] }] }] };
+  await app.students.save(item.document.id, item);
+  await page.goto(base + '/?view=student&id=' + item.document.id);
+  await expect(page.locator('.student-preparation strong')).toHaveText('Existing notes');
+  await page.getByRole('button', { name: 'Edit next conversation', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Next meeting agenda', exact: true })).toHaveValue('**Existing notes**');
+  await page.getByRole('button', { name: 'Done editing next conversation', exact: true }).click();
+  expect((await disk(page)).preparation.agenda.type).toBe('doc');
+  await page.getByRole('button', { name: 'Edit next conversation', exact: true }).click();
+  await rich(page, 'Next meeting agenda', '**Existing notes**\n\nNew details'); await saved(page);
+  await page.getByRole('button', { name: 'Done editing next conversation', exact: true }).click();
+  await expect(page.locator('.student-preparation strong')).toHaveText('Existing notes');
+  await expect(page.locator('.student-preparation')).toContainText('New details');
 });
