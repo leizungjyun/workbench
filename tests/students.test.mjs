@@ -172,3 +172,16 @@ test('global search API combines notebook, Daily and student match counts', asyn
     assert.deepEqual(await app.students.search(String(coursesCompleted)), []);
   }
 });
+
+test('legacy supervision records accept optional correction and next conversation notes, preserve and search them', async t => {
+  const { students } = await fixture(t); let item = await students.create({ name: 'Synthetic follow-up' }); populate(item.document);
+  validateStudent(item.document);
+  const session = item.document.sessions[0]; session.correction = rich('Corrected baseline');
+  session.nextConversation = { date: '2026-10-23', agenda: rich('Review corrected experiments') };
+  item = await students.save(item.document.id, item);
+  assert.deepEqual((await students.read(item.document.id)).document.sessions[0].nextConversation, session.nextConversation);
+  const [result] = await students.search('corrected'); assert.equal(result.count, 2); assert.equal(result.matches[0].sessionId, session.id);
+  for (const mutate of [s => s.correction = 'plain text', s => s.nextConversation.date = '2026-13-01', s => s.nextConversation.agenda = null, s => s.nextConversation.extra = true]) {
+    const bad = structuredClone(item.document); mutate(bad.sessions[0]); assert.throws(() => validateStudent(bad), { status: 400 });
+  }
+});

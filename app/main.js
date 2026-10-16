@@ -102,7 +102,11 @@ editor = new EditorView({ state: editorState(''), parent: $('editor') });
 const scrollSync = synchronizeScroll(editor, $('preview'), () => screen === 'notebook' && mode === 'split' && isMarkdown(), () => renderedDoc === editor.state.doc && renderedPath === current?.path);
 const jupyter = new JupyterEditor({ parent: $('jupyter-editor'), api, changed, notice, save: () => save(), vimEnabled });
 const workspaceTerminal = new WorkspaceTerminal({ api, notice, restoreFocus: () => { if (current && screen === 'notebook') { if (isJupyter()) jupyter.views[0]?.editor.focus(); else if (mode !== 'preview') editor.focus(); else $('note-title').focus(); } } });
-const students = new StudentWorkspace({ schedule: async (studentId, date) => { if (await openCalendar(date)) calendar.edit(undefined, undefined, { studentId, title: 'Student conversation', duration: '30' }); }, parent: $('students-workspace'), api, notice, prepare: flush, navigate: id => openStudents(id), enter: async () => {
+const students = new StudentWorkspace({ schedule: async (studentId, date) => {
+  if (!await openCalendar(date)) return;
+  const name = calendar.students.find(s => s.id === studentId)?.profile.name;
+  calendar.edit(undefined, undefined, { studentId, title: `${name || 'Student'} · Conversation`, categoryId: calendar.categories.find(c => c.name === 'Students')?.id || 'category-1', duration: '30' });
+}, parent: $('students-workspace'), api, notice, prepare: flush, navigate: id => openStudents(id), enter: async () => {
   tabs.release(); clearTimeout(saveTimer); clearTimeout(previewTimer); current = null; savedContent = '';
   setScreen('students-workspace'); renderSidebar(); return true;
 } });

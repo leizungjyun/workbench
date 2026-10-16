@@ -49,7 +49,7 @@ export class StudentStore {
       match(d.preparation.date, 'Next conversation'); match(richText(d.preparation.agenda), 'Next conversation');
       for (const s of d.sessions) {
         const target = { sessionId: s.id };
-        for (const value of [s.date, s.title, richText(s.discussion), richText(s.decisions), ...s.actions.flatMap(a => [a.text, a.owner, a.dueDate])]) match(value, 'Meeting record', target);
+        for (const value of [s.date, s.title, richText(s.discussion), richText(s.decisions), richText(s.correction), s.nextConversation?.date || '', richText(s.nextConversation?.agenda), ...s.actions.flatMap(a => [a.text, a.owner, a.dueDate])]) match(value, 'Meeting record', target);
       }
       for (const g of d.objectives) {
         for (const value of [g.title, richText(g.description), g.targetDate, g.status, ...g.milestones.map(m => m.text)]) match(value, 'Objective', { goalId: g.id });

@@ -264,7 +264,9 @@ export async function createApp(root, { now = Date.now, appRoot = path.dirname(f
           const checked = await conversationCheck(event, input.document.events, true);
           if (checked.conflicts.length && input.acknowledgements?.[event.id] !== checked.acknowledgement) fail(409, 'Schedule conflict changed or needs confirmation. Review the timetable and confirm this booking.');
         }
-        return calendar.save(input);
+        const saved = await calendar.save(input);
+        await daily.read();
+        return saved;
       })); }
       if (req.method === 'GET' && route === '/api/calendar/export') return json(200, await store.serialize(() => calendar.export()));
       if (req.method === 'GET' && route === '/api/daily') return json(200, await store.serialize(() => daily.read()));

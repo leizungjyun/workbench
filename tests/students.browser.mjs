@@ -221,3 +221,53 @@ test('global search finds student text and opens meeting records and archived ob
   await page.locator('#search-launch').click(); await page.locator('#search-input').fill('missing keyword');
   await expect(page.locator('.empty-message')).toContainText('No results found');
 });
+
+test('student scheduling creates a named Students Daily record and Daily completion updates Calendar', async ({ page }) => {
+  await create(page, 'Synthetic Ada', false);
+  await work(page).getByRole('button', { name: 'Schedule conversation', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add event', exact: true });
+  await expect(dialog.getByLabel('Title', { exact: true })).toHaveValue('Synthetic Ada · Conversation');
+  await expect(dialog.getByLabel('Category (optional)', { exact: true })).toHaveValue('category-1');
+  await dialog.getByLabel('Starting time', { exact: true }).fill('2026-10-20T10:00');
+  await dialog.getByLabel('Title', { exact: true }).fill('Research planning');
+  await dialog.getByRole('button', { name: 'Save event', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const event = (await app.calendar.read()).document.events[0];
+  expect(event.title).toBe('Synthetic Ada · Research planning'); expect(event.categoryId).toBe('category-1');
+  const dailyOnDisk = JSON.parse(await fs.readFile(path.join(root, '.notebook/daily/workspace.json'), 'utf8'));
+  expect(dailyOnDisk.tasks.find(t => t.id === event.id).versions[0].text).toBe(event.title);
+  await page.goto(base + '/?view=daily&date=2026-10-20');
+  await page.getByRole('checkbox', { name: `Complete ${event.title}`, exact: true }).check();
+  await expect(page.locator('#daily-workspace').getByRole('status')).toContainText('Saved to disk');
+  await page.goto(base + '/?view=calendar&date=2026-10-20');
+  await expect(page.locator(`[data-event="${event.id}"]`).first()).toHaveClass(/completed/);
+  await expect(page.locator(`[data-event="${event.id}"]`).first()).toContainText('Completed in Daily');
+});
+
+test('supervision notes format Markdown in place and preserve correction and next conversation blocks', async ({ page }) => {
+  await create(page, 'Synthetic Grace');
+  await page.getByRole('button', { name: 'Add meeting', exact: true }).click();
+  const discussion = work(page).getByRole('textbox', { name: 'Discussion', exact: true });
+  await discussion.focus(); await page.keyboard.type('## Progress'); await page.keyboard.press('Enter');
+  await page.keyboard.type('**Evidence**'); await page.keyboard.press('Space');
+  await expect(discussion.locator('h2')).toHaveText('Progress');
+  await expect(discussion.locator('strong')).toHaveText('Evidence');
+  await page.keyboard.type('[Source](https://example.com)');
+  await expect(discussion.locator('a')).toHaveText('Source');
+  await expect(discussion.locator('a')).toHaveAttribute('href', 'https://example.com');
+  const correction = work(page).getByRole('textbox', { name: 'Correction', exact: true });
+  // A real clipboard data transfer exercises the editor's Markdown paste handler.
+  await correction.evaluate(node => { const clipboardData = new DataTransfer(); clipboardData.setData('text/plain', '**Corrected** result\n\n- Recheck baseline'); node.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true })); });
+  await expect(correction.locator('strong')).toHaveText('Corrected'); await expect(correction.locator('li')).toContainText('Recheck baseline');
+  await work(page).getByLabel('Next conversation date', { exact: true }).fill('2026-10-23');
+  await rich(page, 'Next conversation agenda', 'Compare corrected experiments'); await saved(page);
+  const doc = await disk(page); expect(doc.sessions[0].correction.content[0].content[0].marks[0].type).toBe('bold');
+  expect(doc.sessions[0].nextConversation.date).toBe('2026-10-23');
+  await page.reload(); await expect(work(page).locator('.student-session')).toContainText('Corrected');
+  await expect(work(page).locator('.student-next-conversation')).toContainText('Compare corrected experiments');
+  await work(page).getByLabel('Search meeting records', { exact: true }).fill('corrected experiments');
+  await expect(work(page).locator('.student-session:visible')).toHaveCount(1);
+  await work(page).getByRole('button', { name: 'Schedule next conversation', exact: true }).click();
+  await expect(page.getByLabel('Starting time', { exact: true })).toHaveValue(/^2026-10-23T/);
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+});

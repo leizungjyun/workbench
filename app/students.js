@@ -1,6 +1,8 @@
+import { StudentMarkdown } from './student-markdown.js';
 import { timetablePanel } from './timetables.js';
 import { Editor, generateHTML } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { emptyText, richText, profileFields, validateStudent, currentStage } from '../student-model.js';
 import './students.css';
@@ -142,10 +144,16 @@ export class StudentWorkspace {
       if (richText(value).trim()) content.innerHTML = DOMPurify.sanitize(generateHTML(value, [StarterKit])); else content.textContent = 'No notes yet.';
       wrap.append(content); return wrap;
     }
-    const wrap = el('section', '', 'student-rich'); wrap.append(el('label', label)); const toolbar = el('div', '', 'student-toolbar'); toolbar.setAttribute('role', 'toolbar'); toolbar.setAttribute('aria-label', `${label} formatting`);
+    const wrap = el('section', '', 'student-rich'); wrap.append(el('label', label), el('small', 'Markdown: headings, **bold**, *italic*, lists and links. Type or paste to format in place.', 'student-markdown-hint')); const toolbar = el('div', '', 'student-toolbar'); toolbar.setAttribute('role', 'toolbar'); toolbar.setAttribute('aria-label', `${label} formatting`);
     const host = el('div', '', 'student-rich-host'); host.setAttribute('aria-label', label);
     wrap.append(toolbar, host);
-    const editor = new Editor({ element: host, editable: !this.readOnly, extensions: [StarterKit.configure({ heading: { levels: [1, 2, 3] }, code: false, codeBlock: false, blockquote: false, horizontalRule: false, strike: false, underline: false, link: { openOnClick: false, protocols: ['http', 'https', 'mailto'] } })], content: value, editorProps: { attributes: { 'aria-label': label, role: 'textbox', 'aria-multiline': 'true', spellcheck: 'true' }, transformPastedHTML: html => DOMPurify.sanitize(html) }, onUpdate: () => { update(editor.getJSON()); this.changed(); }, onSelectionUpdate: () => sync() });
+    const editor = new Editor({ element: host, editable: !this.readOnly, extensions: [StudentMarkdown, StarterKit.configure({ heading: { levels: [1, 2, 3] }, code: false, codeBlock: false, blockquote: false, horizontalRule: false, strike: false, underline: false, link: { openOnClick: false, protocols: ['http', 'https', 'mailto'] } })], content: value, editorProps: { attributes: { 'aria-label': label, role: 'textbox', 'aria-multiline': 'true', spellcheck: 'true' }, transformPastedHTML: html => DOMPurify.sanitize(html), handlePaste: (view, event) => {
+      const text = event.clipboardData?.getData('text/plain');
+      if (!text || event.clipboardData.getData('text/html')) return false;
+      event.preventDefault();
+      editor.commands.insertContent(DOMPurify.sanitize(marked.parse(text, { breaks: true }), { ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'strong', 'em', 'ul', 'ol', 'li', 'a'], ALLOWED_ATTR: ['href', 'start'] }));
+      return true;
+    } }, onUpdate: () => { update(editor.getJSON()); this.changed(); }, onSelectionUpdate: () => sync() });
     const controls = [
       ['Heading', () => editor.chain().focus().toggleHeading({ level: 2 }).run(), () => editor.isActive('heading')],
       ['Bold', () => editor.chain().focus().toggleBold().run(), () => editor.isActive('bold')],
@@ -268,7 +276,7 @@ export class StudentWorkspace {
     return new Promise(resolve => dialog.addEventListener('close', () => { dialog.remove(); resolve(latest); }, { once: true }));
   }
   remove(array, item, label) { if (!confirm(`Remove this ${label}? You can undo the removal immediately.`)) return; const index = array.indexOf(item); this.undo = { array, index, item }; array.splice(index, 1); this.changed(); this.renderDetail(); }
-  addSession(discussion = emptyText(), date = today()) { const s = { id: crypto.randomUUID(), date, title: 'Catch-up', discussion: clone(discussion), decisions: emptyText(), objectiveIds: [], actions: [] }; this.data.sessions.push(s); this.openSessions.add(s.id); return s; }
+  addSession(discussion = emptyText(), date = today()) { const s = { id: crypto.randomUUID(), date, title: 'Catch-up', discussion: clone(discussion), decisions: emptyText(), objectiveIds: [], actions: [], correction: emptyText(), nextConversation: { date: '', agenda: emptyText() } }; this.data.sessions.push(s); this.openSessions.add(s.id); return s; }
   renderPreparation() {
     const p = this.data.preparation; this.previewing = !this.editing('preparation'); this.preparation.append(this.sectionHeading('Next Conversation', 'preparation'));
     this.preparation.append(this.button('Schedule conversation', () => this.schedule(this.data.id, p.date || today())));
@@ -302,7 +310,7 @@ export class StudentWorkspace {
   filterSessions() {
     if (!this.sessionList) return;
     const q = this.historyQuery.toLocaleLowerCase();
-    for (const s of this.data.sessions) { const card = this.sessionList.querySelector(`[data-session="${s.id}"]`); if (card) card.hidden = !`${s.date} ${s.title} ${richText(s.discussion)} ${richText(s.decisions)} ${s.actions.map(a => a.text).join(' ')}`.toLocaleLowerCase().includes(q); }
+    for (const s of this.data.sessions) { const card = this.sessionList.querySelector(`[data-session="${s.id}"]`); if (card) card.hidden = !`${s.date} ${s.title} ${richText(s.discussion)} ${richText(s.decisions)} ${richText(s.correction)} ${s.nextConversation?.date || ''} ${richText(s.nextConversation?.agenda)} ${s.actions.map(a => a.text).join(' ')}`.toLocaleLowerCase().includes(q); }
     let empty = this.sessionList.querySelector('.student-empty'); if (!empty) { empty = el('p', '', 'student-empty'); this.sessionList.append(empty); }
     empty.textContent = this.data.sessions.length ? 'No records match your search.' : 'Your first conversation starts the record.'; empty.hidden = [...this.sessionList.querySelectorAll('details')].some(card => !card.hidden);
   }
@@ -313,14 +321,18 @@ export class StudentWorkspace {
     let mounted = false;
     const mount = () => {
     if (mounted) return; mounted = true; this.previewing = !this.editing('history');
-    const body = el('div', '', 'student-session-body'); body.append(this.field('Meeting date', s.date, value => { s.date = value; summary.textContent = `${value} · ${s.title}`; this.refreshGoalHistories(); }, 'date'), this.field('Meeting title', s.title, value => { s.title = value; summary.textContent = `${s.date} · ${value}`; this.refreshGoalHistories(); }), this.rich('Discussion', s.discussion, value => { s.discussion = value; }), this.rich('Decisions', s.decisions, value => { s.decisions = value; }));
+    const body = el('div', '', 'student-session-body'); body.append(this.field('Meeting date', s.date, value => { s.date = value; summary.textContent = `${value} · ${s.title}`; this.refreshGoalHistories(); }, 'date'), this.field('Meeting title', s.title, value => { s.title = value; summary.textContent = `${s.date} · ${value}`; this.refreshGoalHistories(); }), this.rich('Discussion', s.discussion, value => { s.discussion = value; }), this.rich('Decisions', s.decisions, value => { s.decisions = value; }), this.rich('Correction', s.correction || emptyText(), value => { s.correction = value; }));
     const links = el('div', '', 'student-goal-links'); links.append(el('h3', 'Related objectives'));
     for (const goal of this.data.objectives) links.append(this.checkbox(goal.title || 'Untitled objective', s.objectiveIds.includes(goal.id), checked => { s.objectiveIds = checked ? [...s.objectiveIds, goal.id] : s.objectiveIds.filter(id => id !== goal.id); this.refreshGoalHistories(); })); body.append(links);
     const list = el('section', '', 'student-action-list'); list.append(el('h3', 'Follow-up actions'));
     s.actions.forEach(a => {
       const row = el('div', '', 'student-action'); row.append(this.checkbox('Action completed', a.done, value => { a.done = value; }), this.field('Action', a.text, value => { a.text = value; this.refreshPreparation(); }), this.select('Owner', a.owner, [['Student', 'Student'], ['Supervisor', 'Supervisor']], value => { a.owner = value; this.refreshPreparation(); }), this.field('Due date', a.dueDate, value => { a.dueDate = value; this.refreshPreparation(); }, 'date'), this.select('Linked objective', a.objectiveId, [['', 'No objective'], ...this.data.objectives.map(g => [g.id, `${g.title || 'Untitled objective'}${g.archived ? ' (archived)' : ''}`])], value => { a.objectiveId = value; this.refreshGoalHistories(); }), ...(this.editing('history') ? [this.button('Remove action', () => this.remove(s.actions, a, 'action'))] : [])); list.append(row);
     });
-    if (this.editing('history')) list.append(this.button('Add action', () => { s.actions.push({ id: crypto.randomUUID(), text: '', owner: 'Student', dueDate: '', done: false, objectiveId: '' }); this.changed(); this.renderDetail(); })); body.append(list); if (this.editing('history')) body.append(this.button('Remove meeting', () => this.remove(this.data.sessions, s, 'meeting record'))); this.previewing = false; card.append(body); if (this.readOnly) for (const b of body.querySelectorAll('button')) b.disabled = true;
+    if (this.editing('history')) list.append(this.button('Add action', () => { s.actions.push({ id: crypto.randomUUID(), text: '', owner: 'Student', dueDate: '', done: false, objectiveId: '' }); this.changed(); this.renderDetail(); })); body.append(list);
+    const next = s.nextConversation || { date: '', agenda: emptyText() };
+    const followup = el('section', '', 'student-next-conversation'); followup.append(el('h3', 'Next Conversation'), this.field('Next conversation date', next.date, value => { next.date = value; s.nextConversation = next; }, 'date'), this.rich('Next conversation agenda', next.agenda, value => { next.agenda = value; s.nextConversation = next; }));
+    followup.append(this.button('Schedule next conversation', () => this.schedule(this.data.id, next.date || today()))); body.append(followup);
+    if (this.editing('history')) body.append(this.button('Remove meeting', () => this.remove(this.data.sessions, s, 'meeting record'))); this.previewing = false; card.append(body); if (this.readOnly) for (const b of body.querySelectorAll('button')) b.disabled = true;
     };
     card.ontoggle = () => { if (card.open) { this.openSessions.add(s.id); mount(); } else this.openSessions.delete(s.id); };
     if (card.open) mount(); return card;

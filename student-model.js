@@ -88,8 +88,14 @@ export function validateStudent(doc) {
   }
   const goalIds = new Set(doc.objectives.map(goal => goal.id));
   for (const session of doc.sessions) {
-    keys(session, ['id', 'date', 'title', 'discussion', 'decisions', 'objectiveIds', 'actions'], 'session'); id(session.id); calendarDate(session.date); if (!session.date) invalid('A meeting date is required.'); string(session.title, 'meeting title', 1000);
-    validateRichText(session.discussion); validateRichText(session.decisions); array(session.objectiveIds, 'objective links');
+    keys(session, ['id', 'date', 'title', 'discussion', 'decisions', 'objectiveIds', 'actions', 'correction', 'nextConversation'], 'session'); id(session.id); calendarDate(session.date); if (!session.date) invalid('A meeting date is required.'); string(session.title, 'meeting title', 1000);
+    validateRichText(session.discussion); validateRichText(session.decisions);
+    if (session.correction !== undefined) validateRichText(session.correction);
+    if (session.nextConversation !== undefined) {
+      keys(session.nextConversation, ['date', 'agenda'], 'next conversation');
+      calendarDate(session.nextConversation.date); validateRichText(session.nextConversation.agenda);
+    }
+    array(session.objectiveIds, 'objective links');
     if (new Set(session.objectiveIds).size !== session.objectiveIds.length || session.objectiveIds.some(value => !goalIds.has(value))) invalid('Invalid objective link.');
     array(session.actions, 'actions');
     for (const action of session.actions) {

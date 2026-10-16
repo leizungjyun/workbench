@@ -47,7 +47,7 @@ For an existing legacy workspace, with its server stopped, `node scripts/organiz
 
 Daily keeps dated task histories, subtasks, categories, notes, and completion states. **Import from Markdown** selects a source note and inclusive date range, previews changes, and applies them with source/Daily revision checks. Repeated imports do not duplicate dates. Import preferences are stored privately.
 
-Calendar supports events, student conversations, class overlays, conflict review, and local reminders. Students supports profiles, meeting preparation, meeting records, goals, and timetable imports. Exports and private import files remain workspace data. The fixture under `tests/fixtures/` uses invented people and schedules.
+Calendar supports events, student conversations, class overlays, conflict review, and local reminders. Students supports profiles, meeting preparation, meeting records, goals, and timetable imports. Scheduling a student conversation creates a Calendar event in the Students category and a linked Daily record titled with the student’s name. Completing or reopening that Daily record updates Calendar’s completion indicator. Student note fields format typed or pasted Markdown in place (headings, bold, italic, lists, and links). Each supervision record includes a Correction field and an appended Next Conversation block with an agenda, date, and scheduling action. Exports and private import files remain workspace data. The fixture under `tests/fixtures/` uses invented people and schedules.
 
 To import a timetable document into an existing student record, stop the server and run:
 

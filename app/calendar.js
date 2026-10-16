@@ -188,7 +188,7 @@ export class CalendarWorkspace {
       if (item.hidden && item.id !== event?.categoryId) continue;
       const option = el('option', item.name); option.value = item.id; category.append(option);
     }
-    category.value = recovered?.categoryId ?? event?.categoryId ?? ''; fields.categoryId = category;
+    category.value = recovered?.categoryId ?? event?.categoryId ?? defaults.categoryId ?? ''; fields.categoryId = category;
     categoryWrap.append(el('span', 'Category (optional)'), category); form.append(categoryWrap);
     const studentWrap = el('label', '', 'calendar-field'), studentSelect = el('select'); studentSelect.setAttribute('aria-label', 'Conversation student');
     for (const [id, name] of [['', 'No student'], ...(this.students || []).map(s => [s.id, s.profile.name])]) { const option = el('option', name); option.value = id; studentSelect.append(option); }
@@ -287,7 +287,12 @@ export class CalendarWorkspace {
       e.preventDefault(); if (submit.disabled) return; ++previewRequest; submit.disabled = true;
       Object.values(fields).forEach(input => { input.disabled = true; }); dialog.querySelector('button').disabled = true; preview.querySelectorAll('button').forEach(b => { b.disabled = true; });
       try {
-        const candidate = makeCandidate(); candidate.title = fields.title.value.trim();
+        const candidate = makeCandidate();
+        if (candidate.studentId) {
+          const name = this.students.find(s => s.id === candidate.studentId)?.profile.name;
+          if (name && !candidate.title.includes(name)) candidate.title = `${name} · ${candidate.title}`;
+          candidate.categoryId = this.categories.find(c => c.name === 'Students')?.id || 'category-1';
+        }
         if (candidate.studentId) {
           const checked = await this.api('/api/timetables/check', 'POST', { event: candidate, draftEvents: this.data.events }); showCheck(checked);
           if (checked.conflicts.length && !confirm(`This conversation conflicts with ${checked.conflicts.map(c => c.title).join(', ')}. Save this conflicting booking?`)) return;
