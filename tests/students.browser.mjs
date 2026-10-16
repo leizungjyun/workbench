@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -244,7 +245,7 @@ test('student scheduling creates a named Students Daily record and Daily complet
   await expect(page.locator(`[data-event="${event.id}"]`).first()).toContainText('Completed in Daily');
 });
 
-test('supervision notes format Markdown in place and preserve correction and next conversation blocks', async ({ page }) => {
+test('supervision notes format Markdown in place and preserve correction blocks', async ({ page }) => {
   await create(page, 'Synthetic Grace');
   await page.getByRole('button', { name: 'Add meeting', exact: true }).click();
   const discussion = work(page).getByRole('textbox', { name: 'Discussion', exact: true });
@@ -259,15 +260,34 @@ test('supervision notes format Markdown in place and preserve correction and nex
   // A real clipboard data transfer exercises the editor's Markdown paste handler.
   await correction.evaluate(node => { const clipboardData = new DataTransfer(); clipboardData.setData('text/plain', '**Corrected** result\n\n- Recheck baseline'); node.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true })); });
   await expect(correction.locator('strong')).toHaveText('Corrected'); await expect(correction.locator('li')).toContainText('Recheck baseline');
-  await work(page).getByLabel('Next conversation date', { exact: true }).fill('2026-10-23');
-  await rich(page, 'Next conversation agenda', 'Compare corrected experiments'); await saved(page);
+  await saved(page);
   const doc = await disk(page); expect(doc.sessions[0].correction.content[0].content[0].marks[0].type).toBe('bold');
-  expect(doc.sessions[0].nextConversation.date).toBe('2026-10-23');
+  expect(doc.sessions[0].nextConversation).toBeUndefined();
   await page.reload(); await expect(work(page).locator('.student-session')).toContainText('Corrected');
-  await expect(work(page).locator('.student-next-conversation')).toContainText('Compare corrected experiments');
-  await work(page).getByLabel('Search meeting records', { exact: true }).fill('corrected experiments');
+  await expect(work(page).locator('.student-next-conversation')).toHaveCount(0);
+  await work(page).getByLabel('Search meeting records', { exact: true }).fill('Corrected');
   await expect(work(page).locator('.student-session:visible')).toHaveCount(1);
-  await work(page).getByRole('button', { name: 'Schedule next conversation', exact: true }).click();
-  await expect(page.getByLabel('Starting time', { exact: true })).toHaveValue(/^2026-10-23T/);
-  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+});
+
+
+test('supervision follows preparation directly even beside tall objectives, on desktop and mobile', async ({ page }) => {
+  await create(page, 'Synthetic layout student', false);
+  const id = (await disk(page)).id, item = await app.students.read(id);
+  const empty = () => ({ type: 'doc', content: [{ type: 'paragraph' }] });
+  item.document.objectives = Array.from({ length: 8 }, (_, index) => ({ id: randomUUID(), title: `Research objective ${index + 1}`, description: empty(), targetDate: '', status: 'Planned', archived: false, milestones: [] }));
+  item.document.sessions.push({ id: randomUUID(), date: '2026-10-16', title: 'Baseline review', discussion: empty(), decisions: empty(), correction: empty(), objectiveIds: [], actions: [] });
+  await app.students.save(id, item); await page.reload();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const preparation = await page.locator('.student-preparation').boundingBox();
+    const history = await page.locator('.student-history').boundingBox();
+    const objectives = await page.locator('.student-objectives').boundingBox();
+    expect(history.y - (preparation.y + preparation.height)).toBeCloseTo(24, 0);
+    if (width > 760) {
+      expect(objectives.y).toBeCloseTo(preparation.y, 0);
+      expect(objectives.y + objectives.height).toBeGreaterThan(history.y + 200);
+    } else expect(objectives.y).toBeGreaterThan(history.y + history.height);
+    await expect(page.locator('.student-session .student-next-conversation')).toHaveCount(0);
+    await page.screenshot({ path: `/private/tmp/workbench-supervision-layout-${width}.png`, fullPage: true });
+  }
 });

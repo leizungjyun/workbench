@@ -17,9 +17,8 @@
 .student-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 11px; color: #68786a; }
 .student-field input, .student-field select, .student-history > input { width: 100%; border: 1px solid #d8dfd1; border-radius: 6px; padding: 9px 10px; background: #fffefc; color: #283e33; font: inherit; font-size: 13px; box-sizing: border-box; }
 .student-columns { display: grid; grid-template-columns: minmax(0, 7fr) minmax(270px, 3fr); gap: 24px; margin-top: 24px; align-items: start; }
-.student-preparation { grid-column: 1; grid-row: 1; }
-.student-history { grid-column: 1; grid-row: 2; min-width: 0; }
-.student-objectives { grid-column: 2; grid-row: 1 / span 2; min-width: 0; }
+.student-main { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.student-history, .student-objectives { min-width: 0; }
 .student-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .student-section-heading h2 { margin: 0; }
 .student-session { margin-top: 14px; padding: 0; overflow: hidden; }
@@ -65,7 +64,7 @@
 .student-dialog input { width: 100%; margin: 8px 0 20px; }
 .student-dialog .student-field { display: block; }
 @media (max-width: 1000px) { .student-profile-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .student-columns { grid-template-columns: minmax(0, 1.6fr) minmax(250px, 1fr); gap: 16px; } }
-@media (max-width: 760px) { .students-heading { flex-direction: column; } .student-columns { display: flex; flex-direction: column; } .student-columns > * { width: 100%; box-sizing: border-box; } .student-preparation { order: 1; } .student-objectives { order: 2; } .student-history { order: 3; } .student-profile-fields { grid-template-columns: 1fr; } .student-panel { padding: 16px; } .student-session { padding: 0; } .student-compare-columns { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .students-heading { flex-direction: column; } .student-columns { display: flex; flex-direction: column; } .student-columns > * { width: 100%; box-sizing: border-box; } .student-profile-fields { grid-template-columns: 1fr; } .student-panel { padding: 16px; } .student-session { padding: 0; } .student-compare-columns { grid-template-columns: 1fr; } }
 
 .student-profile-summary { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 14px 16px; margin: 0; }
 .student-profile-summary > div { min-width: 0; max-width: 100%; }
@@ -102,4 +101,3 @@
 }
 
 .student-markdown-hint { display: block; color: #707c71; font-size: 11px; margin-bottom: 8px; }
-.student-next-conversation { border-top: 1px solid #dce2d5; margin-top: 8px; padding-top: 8px; }

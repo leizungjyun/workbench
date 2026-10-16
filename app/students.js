@@ -255,7 +255,8 @@ export class StudentWorkspace {
     for (const goal of d.objectives.filter(g => !g.archived)) goals.append(this.goalCard(goal));
     if (!d.objectives.some(g => !g.archived)) goals.append(el('p', 'Start with an objective: a research direction, skill, or milestone.', 'student-muted'));
     const archived = d.objectives.filter(g => g.archived); if (archived.length) { const group = el('details'); group.append(el('summary', `Archived objectives (${archived.length})`)); archived.forEach(g => group.append(this.goalCard(g))); goals.append(group); }
-    columns.append(this.preparation, goals, history);
+    const main = el('div', '', 'student-main'); main.append(this.preparation, history);
+    columns.append(main, goals);
     const undo = el('div', '', 'student-undo'); undo.hidden = !this.undo; undo.append(el('span', 'Item removed. '), this.button('Undo removal', () => { this.undo.array.splice(this.undo.index, 0, this.undo.item); this.undo = null; this.changed(); this.renderDetail(); }));
     this.parent.replaceChildren(head, statusRow, this.conflictBar, undo, profile, this.makeTimetable(), columns);
     if (this.readOnly) { const banner = el('div', '', 'student-readonly'); banner.append(el('span', 'Already being edited in another tab. This view is read-only. '), this.button('Edit here when available', () => this.reclaim())); this.parent.insertBefore(banner, profile); }
@@ -276,7 +277,7 @@ export class StudentWorkspace {
     return new Promise(resolve => dialog.addEventListener('close', () => { dialog.remove(); resolve(latest); }, { once: true }));
   }
   remove(array, item, label) { if (!confirm(`Remove this ${label}? You can undo the removal immediately.`)) return; const index = array.indexOf(item); this.undo = { array, index, item }; array.splice(index, 1); this.changed(); this.renderDetail(); }
-  addSession(discussion = emptyText(), date = today()) { const s = { id: crypto.randomUUID(), date, title: 'Catch-up', discussion: clone(discussion), decisions: emptyText(), objectiveIds: [], actions: [], correction: emptyText(), nextConversation: { date: '', agenda: emptyText() } }; this.data.sessions.push(s); this.openSessions.add(s.id); return s; }
+  addSession(discussion = emptyText(), date = today()) { const s = { id: crypto.randomUUID(), date, title: 'Catch-up', discussion: clone(discussion), decisions: emptyText(), objectiveIds: [], actions: [], correction: emptyText() }; this.data.sessions.push(s); this.openSessions.add(s.id); return s; }
   renderPreparation() {
     const p = this.data.preparation; this.previewing = !this.editing('preparation'); this.preparation.append(this.sectionHeading('Next Conversation', 'preparation'));
     this.preparation.append(this.button('Schedule conversation', () => this.schedule(this.data.id, p.date || today())));
@@ -329,9 +330,6 @@ export class StudentWorkspace {
       const row = el('div', '', 'student-action'); row.append(this.checkbox('Action completed', a.done, value => { a.done = value; }), this.field('Action', a.text, value => { a.text = value; this.refreshPreparation(); }), this.select('Owner', a.owner, [['Student', 'Student'], ['Supervisor', 'Supervisor']], value => { a.owner = value; this.refreshPreparation(); }), this.field('Due date', a.dueDate, value => { a.dueDate = value; this.refreshPreparation(); }, 'date'), this.select('Linked objective', a.objectiveId, [['', 'No objective'], ...this.data.objectives.map(g => [g.id, `${g.title || 'Untitled objective'}${g.archived ? ' (archived)' : ''}`])], value => { a.objectiveId = value; this.refreshGoalHistories(); }), ...(this.editing('history') ? [this.button('Remove action', () => this.remove(s.actions, a, 'action'))] : [])); list.append(row);
     });
     if (this.editing('history')) list.append(this.button('Add action', () => { s.actions.push({ id: crypto.randomUUID(), text: '', owner: 'Student', dueDate: '', done: false, objectiveId: '' }); this.changed(); this.renderDetail(); })); body.append(list);
-    const next = s.nextConversation || { date: '', agenda: emptyText() };
-    const followup = el('section', '', 'student-next-conversation'); followup.append(el('h3', 'Next Conversation'), this.field('Next conversation date', next.date, value => { next.date = value; s.nextConversation = next; }, 'date'), this.rich('Next conversation agenda', next.agenda, value => { next.agenda = value; s.nextConversation = next; }));
-    followup.append(this.button('Schedule next conversation', () => this.schedule(this.data.id, next.date || today()))); body.append(followup);
     if (this.editing('history')) body.append(this.button('Remove meeting', () => this.remove(this.data.sessions, s, 'meeting record'))); this.previewing = false; card.append(body); if (this.readOnly) for (const b of body.querySelectorAll('button')) b.disabled = true;
     };
     card.ontoggle = () => { if (card.open) { this.openSessions.add(s.id); mount(); } else this.openSessions.delete(s.id); };
