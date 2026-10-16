@@ -28,3 +28,6 @@
 .student-group-overview { margin-top: 20px; }
 .student-group-overview a { color: #365743; }
 .student-group-overview li { margin: 8px 0; }
+
+.group-members-dialog .group-member-option[hidden], .group-member-options[hidden] { display: none; }
+.group-member-empty { margin: 0; color: #707c71; }
