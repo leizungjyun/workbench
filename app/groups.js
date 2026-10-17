@@ -212,7 +212,7 @@ export class GroupWorkspace extends StudentWorkspace {
       for (const a of s.actions) {
         const row = el('div', '', 'group-action'); this.previewing = !editing;
         row.append(this.checkbox('Action completed', a.done, v => { a.done = v; }), this.field('Action', a.text, v => { a.text = v; }), this.select('Owner', a.owner, [['Students','Named students'],['Group','Group'],['Supervisor','Supervisor']], owner => { a.owner = owner; a.assigneeIds = owner === 'Students' ? [s.participantIds[0]] : []; this.renderDetail(); }), this.field('Due date', a.dueDate, v => { a.dueDate = v; }, 'date'), this.select('Linked objective', a.objectiveId, [['','No objective'],...this.data.objectives.map(g => [g.id,g.title || 'Untitled objective'])], v => { a.objectiveId = v; this.refreshGoalHistories(); }));
-        if (a.owner === 'Students') for (const id of [...new Set([...this.data.memberIds,...s.participantIds,...a.assigneeIds])]) row.append(this.checkbox(`Assign: ${this.name(id)}`, a.assigneeIds.includes(id), checked => { if (!checked && a.assigneeIds.length === 1) { this.notice('Keep at least one student owner.'); this.renderDetail(); return; } a.assigneeIds = checked ? [...a.assigneeIds,id] : a.assigneeIds.filter(value => value!==id); }));
+        if (a.owner === 'Students') row.append(this.assigneePicker(s, a));
         if (editing) row.append(this.button('Remove action', () => this.remove(s.actions,a,'action'))); actions.append(row);
       }
       if (editing) actions.append(this.button('Add action', () => { s.actions.push({ id: crypto.randomUUID(), text: '', owner: 'Group', assigneeIds: [], dueDate: '', done: false, objectiveId: '' }); this.changed(); this.renderDetail(); })); body.append(actions); this.previewing = false;
@@ -224,6 +224,26 @@ export class GroupWorkspace extends StudentWorkspace {
       card.append(body); if(this.readOnly)for(const b of body.querySelectorAll('button'))b.disabled=true;
     };
     card.ontoggle=()=>{if(card.open){this.openSessions.add(s.id);mount();}else this.openSessions.delete(s.id);};if(card.open)mount();return card;
+  }
+  assigneePicker(session, action) {
+    const names = () => action.assigneeIds.map(id => this.name(id)).join(', ');
+    if (this.previewing) return this.fact('Assigned students', names());
+    const picker = el('details', '', 'group-assignee-picker'), summary = el('summary');
+    const updateSummary = () => { summary.textContent = `Assigned students: ${names()}`; };
+    updateSummary(); picker.append(summary);
+    const options = el('div', '', 'group-assignee-options');
+    options.setAttribute('role', 'group'); options.setAttribute('aria-label', 'Assigned students');
+    for (const id of new Set([...this.data.memberIds, ...session.participantIds, ...action.assigneeIds])) {
+      const choice = this.checkbox(`Assign: ${this.name(id)}`, action.assigneeIds.includes(id), checked => {
+        if (!checked && action.assigneeIds.length === 1) {
+          choice.querySelector('input').checked = true; this.notice('Keep at least one student owner.'); return;
+        }
+        action.assigneeIds = checked ? [...action.assigneeIds, id] : action.assigneeIds.filter(value => value !== id);
+        updateSummary();
+      });
+      choice.querySelector('span').textContent = this.name(id); options.append(choice);
+    }
+    picker.append(options); return picker;
   }
   materials(s,editing) {
     const section=el('section','','group-materials');section.append(el('h3','Presentation materials (optional)'));

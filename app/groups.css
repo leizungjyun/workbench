@@ -31,3 +31,8 @@
 
 .group-members-dialog .group-member-option[hidden], .group-member-options[hidden] { display: none; }
 .group-member-empty { margin: 0; color: #707c71; }
+
+.group-assignee-picker { min-width: 0; border: 1px solid #dce2d5; border-radius: 6px; background: #fffefc; }
+.group-assignee-picker > summary { padding: 9px 12px; cursor: pointer; font-size: 13px; overflow-wrap: anywhere; }
+.group-assignee-options { display: flex; flex-wrap: wrap; gap: 8px 16px; max-height: 180px; overflow: auto; padding: 4px 12px 12px; }
+.group-assignee-options .student-check { margin: 0; }
