@@ -31,9 +31,9 @@ test('academic drafts recover; stale disk revisions preserve draft and prevent o
   const external=await app.timetables.read();external.document.semesters[0].name='Disk autumn';await app.timetables.save(external);await dialog.getByRole('button',{name:'Review changes',exact:true}).click();await dialog.getByRole('button',{name:'Apply reviewed changes'}).click();await expect(dialog).toContainText('changed on disk');expect((await app.timetables.read()).document.semesters[0].name).toBe('Disk autumn');await dialog.getByRole('button',{name:'Close',exact:true}).click();await page.reload();await page.getByRole('button',{name:'School calendars',exact:true}).click();await dialog.getByRole('button',{name:'Review changes',exact:true}).click();await dialog.getByRole('button',{name:'Apply reviewed changes'}).click();await expect(dialog).toContainText('recovered draft is stale');await dialog.getByRole('button',{name:'Reload disk / discard draft'}).click();await expect(dialog.getByLabel('Semester name',{exact:true})).toHaveValue('Disk autumn');
 });
 test('Students schedules one Calendar conversation, conflict override is explicit, Daily links and rescheduling preserve identity',async({page})=>{
-  await page.goto(base+`/?view=student&id=${studentId}`);await page.getByRole('button',{name:'Schedule conversation',exact:true}).click();const dialog=page.getByRole('dialog');await expect(dialog.getByLabel('Conversation student')).toHaveValue(studentId);await expect(dialog.getByLabel('Duration in minutes (optional)',{exact:true})).toHaveValue('30');await dialog.getByLabel('Starting time',{exact:true}).fill('2026-10-12T10:30');await expect(dialog).toContainText('Conflict: Example computation');await expect(dialog).toContainText('Free slots on this date');
-  const dismissed=new Promise(resolve=>page.once('dialog',async d=>{await d.dismiss();resolve();}));await dialog.getByRole('button',{name:'Save event',exact:true}).click();await dismissed;await expect(dialog.getByRole('button',{name:'Save event',exact:true})).toBeEnabled();await expect(dialog).toBeVisible();expect((await app.calendar.read()).document.events).toHaveLength(0);
-  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Save event',exact:true}).click();await expect(dialog).toHaveCount(0);const event=(await app.calendar.read()).document.events[0];expect(event.studentId).toBe(studentId);
+  await page.goto(base+`/?view=student&id=${studentId}`);await page.getByRole('button',{name:'Schedule conversation',exact:true}).click();const dialog=page.getByRole('dialog');await expect(dialog.getByLabel('Conversation student')).toHaveValue(studentId);await expect(dialog.getByLabel('Duration in minutes (optional)',{exact:true})).toHaveValue('30');await dialog.getByLabel('Starting time',{exact:true}).fill('2026-10-12T10:30');await expect(dialog.locator('.schedule-conflict')).toContainText('Example computation');await expect(dialog.locator('.schedule-conflict-source')).toHaveText('Example Student · Class');await expect(dialog).toContainText('Free slots on this date');
+  await dialog.getByRole('button',{name:'Save event',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('Review the conflicts');await expect(dialog.getByRole('button',{name:'Save event',exact:true})).toBeEnabled();await expect(dialog).toBeVisible();expect((await app.calendar.read()).document.events).toHaveLength(0);
+  await dialog.getByLabel('Save despite these conflicts',{exact:true}).check();await dialog.getByRole('button',{name:'Save event',exact:true}).click();await expect(dialog).toHaveCount(0);const event=(await app.calendar.read()).document.events[0];expect(event.studentId).toBe(studentId);
   await page.goto(base+'/?view=daily&date=2026-10-12');await expect(page.locator('#daily-workspace')).toContainText('Conversation conflict: Example computation');await page.getByRole('link',{name:'Reschedule in Calendar'}).click();await expect(dialog.getByLabel('Starting time',{exact:true})).toHaveValue('2026-10-12T10:30');await dialog.getByLabel('Starting time',{exact:true}).fill('2026-10-12T12:00');await dialog.getByRole('button',{name:'Save event',exact:true}).click();await expect(dialog).toHaveCount(0);const changed=(await app.calendar.read()).document.events;expect(changed).toHaveLength(1);expect(changed[0].id).toBe(event.id);expect(changed[0].start).toBe('2026-10-12T04:00:00.000Z');
   await page.goto(base+'/?view=student&id='+studentId);await expect(page.locator('.student-preparation')).toContainText('Scheduled:');
 });
@@ -128,15 +128,15 @@ test('open conversation form checks current classes and events instead of cached
   await app.calendar.save(calendar);
   await dialog.getByLabel('Starting time', { exact: true }).fill('2026-10-12T14:00');
   await dialog.getByLabel('Conversation student').selectOption(studentId);
-  await expect(dialog).toContainText('Conflict: Newly added class');
-  await expect(dialog).toContainText('Conflict: External Calendar booking');
+  await expect(dialog.locator('.schedule-conflict')).toContainText(['Newly added class', 'External Calendar booking']);
+  await expect(dialog.locator('.schedule-conflict').filter({hasText:'Your Calendar'})).toContainText('External Calendar booking');
   await expect(dialog.locator('.conversation-free-windows')).not.toContainText('11:40–15:15');
   const newer = await app.students.read(studentId);
   newer.document.timetables[0].courses = newer.document.timetables[0].courses.filter(c=>c.id!=='new-class');
   await app.students.save(studentId, newer);
   await dialog.getByLabel('Duration in minutes (optional)', { exact: true }).fill('45');
-  await expect(dialog).not.toContainText('Conflict: Newly added class');
-  await expect(dialog).toContainText('Conflict: External Calendar booking');
+  await expect(dialog.locator('.schedule-conflict').filter({hasText:'Newly added class'})).toHaveCount(0);
+  await expect(dialog.locator('.schedule-conflict').filter({hasText:'Your Calendar'})).toContainText('External Calendar booking');
 });
 
 test('past dates have no choices and today advances to future minute boundaries while the form stays open', async ({ page }) => {
@@ -207,4 +207,36 @@ test('completed coursework hides the detail timetable and dashboard student; pro
   await page.getByLabel('Course status',{exact:true}).selectOption('ongoing');
   await page.getByRole('button',{name:'Save profile',exact:true}).click();
   await expect(page.getByRole('region',{name:'Student timetables'})).toBeVisible();
+});
+
+test('conflict panel distinguishes your Calendar from classes, wraps on mobile, and resets inline acknowledgment', async ({ page }) => {
+  const calendar = await app.calendar.read();
+  const title = 'Supervisor planning with a deliberately long synthetic event title for checking readable conflict notifications';
+  calendar.document.events.push({ id: randomUUID(), title, start: '2026-10-12T02:30:00.000Z', durationMinutes: 30 });
+  await app.calendar.save(calendar);
+  await page.goto(base + `/?view=student&id=${studentId}`);
+  await page.getByRole('button', { name: 'Schedule conversation', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Starting time', { exact: true }).fill('2026-10-12T10:30');
+  const panel = dialog.getByRole('region', { name: 'Scheduling conflicts', exact: true });
+  await expect(panel.locator('.schedule-conflict')).toHaveCount(2);
+  await expect(panel.locator('.schedule-conflict-source')).toHaveText(['Example Student · Class', 'Your Calendar']);
+  await expect(panel.locator('strong').last()).toHaveText(title);
+  const ack = dialog.getByLabel('Save despite these conflicts', { exact: true });
+  await expect(ack).toBeEnabled(); await ack.focus(); await page.keyboard.press('Space'); await expect(ack).toBeChecked();
+  await dialog.getByLabel('Location (optional)', { exact: true }).fill('New room');
+  await expect(ack).not.toBeChecked();
+  await expect(ack).toBeEnabled();
+  await panel.screenshot({ path: '/private/tmp/workbench-conflicts-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await panel.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await panel.screenshot({ path: '/private/tmp/workbench-conflicts-mobile.png' });
+  await ack.check();
+  const external = await app.calendar.read(); external.document.events[0].title = 'Updated supervisor planning'; await app.calendar.save(external);
+  await dialog.getByRole('button', { name: 'Save event', exact: true }).click();
+  await expect(dialog).toBeVisible(); await expect(ack).not.toBeChecked();
+  await expect(panel).toContainText('Updated supervisor planning');
+  await expect(dialog.getByLabel('Location (optional)', { exact: true })).toHaveValue('New room');
+  await ack.check(); await dialog.getByRole('button', { name: 'Save event', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
 });

@@ -68,7 +68,7 @@ test('group scheduling creates one categorized Daily record, retains identity, c
 test('availability includes every participant, common windows and incomplete timetables; conflicts and stale acknowledgements are enforced',async t=>{
   const f=await fixture(t),s=await withSession(f),e=eventFor(f,s);
   const calendar=await f.app.calendar.read();calendar.document.events.push({id:randomUUID(),title:'Existing booking',start:e.start,durationMinutes:30});await f.app.calendar.save(calendar);
-  let checked=await (await f.request(`/api/groups/${e.groupId}/check`,'POST',{event:e})).json();assert.equal(checked.participants.length,3);assert.equal(checked.incomplete,true);assert.equal(checked.conflicts.length,3);assert.ok(checked.slots.every(slot=>slot.end<=e.start||slot.start>='2026-10-20T02:30:00.000Z'));
+  let checked=await (await f.request(`/api/groups/${e.groupId}/check`,'POST',{event:e})).json();assert.equal(checked.participants.length,3);assert.equal(checked.incomplete,true);assert.equal(checked.conflicts.length,1);assert.equal(checked.conflicts[0].title,'Existing booking');assert.ok(checked.conflicts[0].eventId);assert.equal(checked.conflicts[0].participantId,undefined);assert.ok(checked.participants.every(p=>p.conflicts.length===0));assert.ok(checked.slots.every(slot=>slot.end<=e.start||slot.start>='2026-10-20T02:30:00.000Z'));
   assert.equal((await book(f,e,false)).status,409);
   const draft=await f.app.calendar.read();draft.document.events.push(e);assert.equal((await f.request('/api/calendar','PUT',{...draft,acknowledgements:{[e.id]:checked.acknowledgement}})).status,200);
   e.location='Room B';checked=await (await f.request(`/api/groups/${e.groupId}/check`,'POST',{event:e})).json();
@@ -84,6 +84,14 @@ test('class conflicts from a second participant affect group availability while 
   let student=await f.app.students.read(f.memberIds[1]);student.document.profile.schoolId='SUAT';student.document.timetables=fixtureData.student.timetables;student=await f.app.students.save(student.document.id,student);
   const e=eventFor(f,s,{start:schoolInstant('2026-10-12','10:30','Asia/Shanghai'),durationMinutes:30});
   let checked=await (await f.request(`/api/groups/${e.groupId}/check`,'POST',{event:e})).json();assert.ok(checked.conflicts.some(c=>c.participantId===student.document.id&&c.type==='class'));
+  const calendar = await f.app.calendar.read();
+  const bookings = [randomUUID(), randomUUID()].map(id => ({ id, title: 'Same booking title', start: e.start, durationMinutes: 30 }));
+  calendar.document.events.push(...bookings); await f.app.calendar.save(calendar);
+  checked = await (await f.request(`/api/groups/${e.groupId}/check`, 'POST', { event: e })).json();
+  assert.equal(checked.conflicts.filter(c => c.type === 'event').length, 2);
+  assert.deepEqual(new Set(checked.conflicts.filter(c => c.type === 'event').map(c => c.eventId)), new Set(bookings.map(e => e.id)));
+  assert.ok(checked.conflicts.filter(c => c.type === 'event').every(c => c.title === 'Same booking title' && !c.participantId));
+  assert.ok(checked.conflicts.some(c => c.type === 'class' && c.participantId === student.document.id && c.participantName === student.document.profile.name));
   student.document.profile.coursesCompleted=true;await f.app.students.save(student.document.id,student);checked=await (await f.request(`/api/groups/${e.groupId}/check`,'POST',{event:e})).json();assert.equal(checked.participants.find(p=>p.id===student.document.id).incomplete,false);assert.equal(checked.conflicts.filter(c=>c.type==='class').length,0);
 });
 test('group APIs require origin, revisions and linked sessions; booked sessions cannot be removed or detached',async t=>{

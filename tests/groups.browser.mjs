@@ -56,8 +56,8 @@ test('schedule one group session, edit its Calendar booking, complete and reopen
 
 test('conflict override is explicit and another tab changing bookings invalidates a reviewed acknowledgement',async({page})=>{
   await create(page);await addSession(page);const id=(await disk(page)).id;const calendar=await app.calendar.read();calendar.document.events.push({id:randomUUID(),title:'Busy supervisor',start:'2026-10-10T02:00:00.000Z',durationMinutes:60});await app.calendar.save(calendar);
-  await work(page).getByRole('button',{name:'Schedule this session',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Schedule group session',exact:true});await expect(dialog.getByLabel('Group availability',{exact:true})).toContainText('Busy supervisor');page.once('dialog',d=>d.dismiss());await dialog.getByRole('button',{name:'Save booking',exact:true}).click();await expect(dialog.getByRole('button',{name:'Save booking',exact:true})).toBeEnabled();await expect(dialog).toBeVisible();expect((await app.calendar.read()).document.events).toHaveLength(1);
-  page.once('dialog',async d=>{const g=await app.groups.read(id);g.document.name='Changed elsewhere';await app.groups.save(id,g);await d.accept();});await dialog.getByRole('button',{name:'Save booking',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('availability changed');expect((await app.calendar.read()).document.events).toHaveLength(1);await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+  await work(page).getByRole('button',{name:'Schedule this session',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Schedule group session',exact:true});await expect(dialog.getByLabel('Group availability',{exact:true})).toContainText('Busy supervisor');await expect(dialog.locator('.schedule-conflict')).toHaveCount(1);await expect(dialog.locator('.schedule-conflict-source')).toHaveText('Your Calendar');await expect(dialog.getByLabel('Participant timetable status')).not.toContainText('class conflict ·');await dialog.getByRole('button',{name:'Save booking',exact:true}).click();await expect(dialog.getByRole('button',{name:'Save booking',exact:true})).toBeEnabled();await expect(dialog).toBeVisible();expect((await app.calendar.read()).document.events).toHaveLength(1);
+  await dialog.getByLabel('Save despite these conflicts',{exact:true}).check();await page.route('**/api/calendar',async route=>{if(route.request().method()==='PUT'){const g=await app.groups.read(id);g.document.name='Changed elsewhere';await app.groups.save(id,g);}await route.continue();});await dialog.getByRole('button',{name:'Save booking',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('availability changed');expect((await app.calendar.read()).document.events).toHaveLength(1);await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
 });
 
 test('presentation files are optional, PDF previews and downloads work, detaching preserves the uploaded file',async({page})=>{
@@ -141,4 +141,29 @@ test('member search filters names and metadata while keeping selections and lead
   await dialog.getByRole('button', { name: 'Save group', exact: true }).click();
   await expect(dialog).toHaveCount(0); await saved(page);
   expect((await disk(page)).memberIds).toEqual([extra.document.id]);
+});
+
+test('a Group conflict is shown once and inline acknowledgment also works when rescheduling in Calendar', async ({ page }) => {
+  await create(page); await addSession(page); await saved(page);
+  const group = await disk(page), calendar = await app.calendar.read();
+  calendar.document.events.push({ id: randomUUID(), title: 'Supervisor planning', start: '2026-10-10T02:00:00.000Z', durationMinutes: 60 });
+  await app.calendar.save(calendar);
+  await work(page).getByRole('button', { name: 'Schedule this session', exact: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'Schedule group session', exact: true });
+  await expect(dialog.locator('.schedule-conflict')).toHaveCount(1);
+  await expect(dialog.locator('.schedule-conflict-source')).toHaveText('Your Calendar');
+  const ack = dialog.getByLabel('Save despite these conflicts', { exact: true });
+  await ack.check(); await page.clock.runFor(15000); await expect(ack).toBeChecked();
+  await dialog.getByLabel('Location', { exact: true }).fill('Room A'); await expect(ack).not.toBeChecked();
+  await expect(ack).toBeEnabled(); await ack.check();
+  await dialog.getByRole('button', { name: 'Save booking', exact: true }).click(); await expect(dialog).toHaveCount(0);
+  await page.goto(base + '/?view=calendar&date=2026-10-10');
+  await page.locator(`#calendar-workspace [data-event="${group.sessions[0].id}"]`).first().getByRole('button', { name: 'Edit event', exact: true }).click();
+  dialog = page.getByRole('dialog');
+  await expect(dialog.locator('.schedule-conflict')).toHaveCount(1);
+  await expect(dialog.locator('.schedule-conflict-source')).toHaveText('Your Calendar');
+  await dialog.getByLabel('Save despite these conflicts', { exact: true }).check();
+  await dialog.getByRole('button', { name: 'Save event', exact: true }).click(); await expect(dialog).toHaveCount(0);
+  const booked = (await app.calendar.read()).document.events.find(e => e.groupId === group.id);
+  expect(booked.id).toBe(group.sessions[0].id); expect(booked.location).toBe('Room A');
 });

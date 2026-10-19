@@ -109,7 +109,7 @@ export function checkConversation(event, student, academic, events, now = Date.n
   if (day<=last) fail('Conversation interval is too long.');
   const interval={...event,end};
   const busy=events.filter(e=>e.id!==event.id).map(e=>({...e,end:eventEnd(e)||new Date(Date.parse(e.start)+1).toISOString()}));
-  const conflicts=[...classes.filter(c=>overlaps(interval,c)).map(c=>({type:'class',title:c.name,start:c.start,end:c.end})),...busy.filter(e=>overlaps(interval,e)).map(e=>({type:'event',title:e.title,start:e.start,end:e.end}))];
+  const conflicts=[...classes.filter(c=>overlaps(interval,c)).map(c=>({type:'class',title:c.name,start:c.start,end:c.end})),...busy.filter(e=>overlaps(interval,e)).map(e=>({type:'event',eventId:e.id,title:e.title,start:e.start,end:e.end}))];
   const dateClasses=classesOnDate(student,academic,first);
   const duration=Date.parse(end)-Date.parse(event.start), slots=[], freeWindows=[];
   const dayOpening=Date.parse(schoolInstant(first,'08:30',zone));

@@ -31,7 +31,10 @@ export class GroupScheduling {
       for (let t = Math.ceil(start / 900000) * 900000; t + duration <= end; t += 900000) starts.add(t);
       for (const t of [...starts].sort((a,b) => a-b)) if (t + duration <= end) slots.push({ start: new Date(t).toISOString(), end: new Date(t + duration).toISOString() });
     }
-    const conflicts = participants.flatMap(p => p.conflicts.map(c => ({ ...c, participantId: p.id, title: `${p.name}: ${c.title}` })));
+    const calendarConflicts = new Map();
+    for (const participant of participants) for (const conflict of participant.conflicts) if (conflict.type === 'event') calendarConflicts.set(conflict.eventId, conflict);
+    for (const participant of participants) participant.conflicts = participant.conflicts.filter(c => c.type === 'class');
+    const conflicts = [...calendarConflicts.values(), ...participants.flatMap(p => p.conflicts.map(c => ({ ...c, participantId: p.id, participantName: p.name })))];
     return { participants, conflicts, incomplete: participants.some(p => p.incomplete), past: Date.parse(event.start) < this.now(), classes: participants.flatMap(p => p.classes.map(c => ({ ...c, name: `${p.name}: ${c.name}` }))), slots, freeWindows, durationMinutes: duration / 60000, timeZone: event.timeZone || 'Asia/Shanghai', groupRevision: group.revision, calendarRevision: current.revision,
       acknowledgement: createHash('sha256').update(JSON.stringify([event, group.revision, current.revision, academic.revision, revisions, conflicts])).digest('hex') };
   }
