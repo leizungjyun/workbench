@@ -1,4 +1,5 @@
 import { Marked } from 'marked';
+import { cjkStrong } from './cjk-strong.js';
 import DOMPurify from 'dompurify';
 import markedKatex from 'marked-katex-extension';
 import katex from 'katex';
@@ -20,7 +21,7 @@ export function renderMarkdown(target, source, attachments = {}, onOpen, alignSo
   const formulas = [], key = `math-${crypto.randomUUID()}`;
   const extension = markedKatex({ nonStandard: true });
   for (const e of extension.extensions) e.renderer = token => { const index = formulas.push(token) - 1; return `<span data-math="${key}-${index}"></span>`; };
-  const parser = new Marked(extension, { walkTokens(token) { if (token.type === 'image' && attachments[token.href]) token.href = attachments[token.href]; } });
+  const parser = new Marked(extension, cjkStrong(), { walkTokens(token) { if (token.type === 'image' && attachments[token.href]) token.href = attachments[token.href]; } });
   let html;
   if (alignSource) {
     const tokens = parser.lexer(source);

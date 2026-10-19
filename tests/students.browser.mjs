@@ -312,3 +312,23 @@ test('legacy formatted notes open as Markdown source and keep their original dat
   await expect(page.locator('.student-preparation strong')).toHaveText('Existing notes');
   await expect(page.locator('.student-preparation')).toContainText('New details');
 });
+
+
+test('Chinese punctuation labels render bold in supervision previews without changing source', async ({ page }) => {
+  await create(page, 'Synthetic CJK');
+  await page.getByRole('button', { name: 'Add meeting', exact: true }).click();
+  const source = '## 讨论\n\n- **来源：**录音\n- **现场修订：**合并章节\n\n**[论文](https://example.com)：**供参考\n\n`**代码：**保持原样`\n\n$y = x^2$\n\n<script>window.cjkInjected = true</script>';
+  await rich(page, 'Discussion', source);
+  await rich(page, 'Correction', '**技术澄清：**保留证据边界');
+  await saved(page);
+  await page.getByRole('button', { name: 'Done editing supervision record', exact: true }).click();
+  const record = work(page).locator('.student-session');
+  await expect(record.locator('strong')).toHaveText(['来源：', '现场修订：', '论文：', '技术澄清：']);
+  await expect(record.getByRole('link', { name: '论文', exact: true })).toHaveAttribute('href', 'https://example.com');
+  await expect(record.locator('code')).toHaveText('**代码：**保持原样');
+  await expect(record.locator('.katex')).toHaveCount(1);
+  expect(await page.evaluate(() => window.cjkInjected)).toBeUndefined();
+  expect((await disk(page)).sessions[0].discussion.text).toBe(source);
+  await page.reload();
+  await expect(work(page).locator('.student-session strong')).toHaveText(['来源：', '现场修订：', '论文：', '技术澄清：']);
+});
