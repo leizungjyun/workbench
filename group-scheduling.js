@@ -1,9 +1,10 @@
+import { blockingCalendarEvents } from './daily-calendar.js';
 import { createHash } from 'node:crypto';
 import { validateCalendar, eventEnd } from './calendar-model.js';
 import { checkConversation, localParts, schoolInstant } from './timetable-model.js';
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
 export class GroupScheduling {
-  constructor({ groups, students, calendar, timetables, now = Date.now }) { Object.assign(this, { groups, students, calendar, timetables, now }); }
+  constructor({ groups, students, calendar, timetables, daily, now = Date.now }) { Object.assign(this, { groups, students, calendar, timetables, daily, now }); }
   async check(groupId, event, draftEvents = [], proposed = false) {
     const group = await this.groups.read(groupId), current = await this.calendar.read(), academic = await this.timetables.read();
     validateCalendar({ ...current.document, events: [event] });
@@ -14,7 +15,8 @@ export class GroupScheduling {
     if (event.participantIds.some(id => !allowed.has(id))) fail(400, 'Choose participants from the group or the historical session.');
     validateCalendar({ ...current.document, events: draftEvents });
     const savedIds = new Set(current.document.events.map(e => e.id));
-    const events = proposed ? draftEvents : [...current.document.events, ...draftEvents.filter(e => !savedIds.has(e.id))];
+    const completion = await this.daily.readStored();
+    const events = blockingCalendarEvents(proposed ? draftEvents : [...current.document.events, ...draftEvents.filter(e => !savedIds.has(e.id))], completion.document);
     validateCalendar({ ...current.document, events });
     const participants = [], revisions = [];
     for (const id of event.participantIds) {
@@ -36,6 +38,6 @@ export class GroupScheduling {
     for (const participant of participants) participant.conflicts = participant.conflicts.filter(c => c.type === 'class');
     const conflicts = [...calendarConflicts.values(), ...participants.flatMap(p => p.conflicts.map(c => ({ ...c, participantId: p.id, participantName: p.name })))];
     return { participants, conflicts, incomplete: participants.some(p => p.incomplete), past: Date.parse(event.start) < this.now(), classes: participants.flatMap(p => p.classes.map(c => ({ ...c, name: `${p.name}: ${c.name}` }))), slots, freeWindows, durationMinutes: duration / 60000, timeZone: event.timeZone || 'Asia/Shanghai', groupRevision: group.revision, calendarRevision: current.revision,
-      acknowledgement: createHash('sha256').update(JSON.stringify([event, group.revision, current.revision, academic.revision, revisions, conflicts])).digest('hex') };
+      acknowledgement: createHash('sha256').update(JSON.stringify([event, group.revision, current.revision, completion.revision, academic.revision, revisions, conflicts])).digest('hex') };
   }
 }

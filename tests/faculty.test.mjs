@@ -66,3 +66,37 @@ test('Faculty availability uses the booking timezone and includes unsaved Calend
   const draft = { id: randomUUID(), title: 'Unsaved booking', start: event.start, durationMinutes: 30 };
   const checked = await (await f.req(`/api/faculty/${event.facultyId}/check`, 'POST', { event, draftEvents: [draft] })).json(); assert.equal(checked.timeZone, 'America/New_York'); assert.equal(checked.conflicts[0].eventId, draft.id); assert.ok(checked.slots.every(s => s.start >= '2026-10-20T12:30:00.000Z'));
 });
+
+test('completed Daily bookings release time in every scheduling flow; reopening invalidates acknowledgment', async t => {
+  for (const kind of ['student', 'group', 'faculty']) await t.test(kind, async t => {
+    const f = await fixture(t);
+    const student = await f.app.students.create({ name: 'Synthetic participant' });
+    student.document.profile.coursesCompleted = true; await f.app.students.save(student.document.id, student);
+    let event = { ...f.event }, route = `/api/faculty/${event.facultyId}/check`;
+    if (kind !== 'faculty') {
+      delete event.facultyId; delete event.categoryId;
+      if (kind === 'student') { event.studentId = student.document.id; route = '/api/timetables/check'; }
+      else {
+        let group = await f.app.groups.create({ name: 'Synthetic group', memberIds: [student.document.id], leaderId: student.document.id });
+        const { newGroupSession } = await import('../group-model.js');
+        const session = newGroupSession(randomUUID(), group.document, '2026-10-20'); group.document.sessions.push(session); await f.app.groups.save(group.document.id, group);
+        Object.assign(event, { id: session.id, groupId: group.document.id, groupSessionId: session.id, participantIds: [student.document.id] }); route = `/api/groups/${group.document.id}/check`;
+      }
+    }
+    let calendar = await f.app.calendar.read();
+    const busy = { id: randomUUID(), title: 'Synthetic completed booking', start: event.start, durationMinutes: 60 };
+    calendar.document.events.push(busy); await f.app.calendar.save(calendar);
+    const check = async () => { const response = await f.req(route, 'POST', { event }); assert.equal(response.status, 200); return response.json(); };
+    const blocked = await check(); assert.equal(blocked.conflicts[0].eventId, busy.id); assert.ok(!blocked.slots.some(s => s.start === event.start));
+    let daily = await f.app.daily.read(); updateTask(daily.document.tasks.find(task => task.id === busy.id), '2026-10-20', { status: 'completed' }); await f.app.daily.save(daily);
+    const free = await check(); assert.deepEqual(free.conflicts, []); assert.ok(free.slots.some(s => s.start === event.start));
+    // Reopening between preview and save must restore the conflict server-side.
+    daily = await f.app.daily.read(); updateTask(daily.document.tasks.find(task => task.id === busy.id), '2026-10-20', { status: 'open' }); await f.app.daily.save(daily);
+    calendar = await f.app.calendar.read(); calendar.document.events.push(event);
+    assert.equal((await f.req('/api/calendar', 'PUT', { ...calendar, acknowledgements: { [event.id]: free.acknowledgement } })).status, 409);
+    const reopened = await check(); assert.equal(reopened.conflicts[0].eventId, busy.id); assert.notEqual(reopened.acknowledgement, blocked.acknowledgement);
+    daily = await f.app.daily.read(); updateTask(daily.document.tasks.find(task => task.id === busy.id), '2026-10-20', { status: 'completed' }); await f.app.daily.save(daily);
+    assert.equal((await f.req('/api/calendar', 'PUT', calendar)).status, 200);
+    assert.equal((await f.app.daily.read()).document.tasks.find(task => task.id === busy.id).versions.at(-1).status, 'completed');
+  });
+});

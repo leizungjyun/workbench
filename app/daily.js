@@ -1,3 +1,4 @@
+import { blockingCalendarEvents } from '../daily-calendar.js';
 import { checkConversation } from '../timetable-model.js';
 import { localDate, shiftDate, validDate, newTask, updateTask, visibleTasks, stateAt, validateDaily, normalizeDaily } from '../daily-model.js';
 import { renderMarkdown } from './render.js';
@@ -198,7 +199,7 @@ export class DailyWorkspace {
     const event = this.calendar?.events.find(e => e.id === task.id && e.studentId);
     if (event) {
       const student = this.studentDocuments.find(s => s.id === event.studentId);
-      if (student) { const checked = checkConversation(event, student, this.academic, this.calendar.events);
+      if (student) { const checked = checkConversation(event, student, this.academic, blockingCalendarEvents(this.calendar.events, this.data));
         if (checked.incomplete) row.append(el('p', 'Conversation availability incomplete', 'timetable-warning'));
         for (const conflict of checked.conflicts) row.append(el('p', `Conversation conflict: ${conflict.title}`, 'timetable-warning'));
       } else row.append(el('p', 'Conversation student unavailable', 'timetable-warning'));

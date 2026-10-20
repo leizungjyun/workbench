@@ -63,3 +63,10 @@ export function syncCalendarTasks(doc, calendar, now = new Date()) {
   validateDaily(doc);
   return JSON.stringify(doc) !== before;
 }
+
+// Match Calendar's completion indicator: only a live linked task's latest
+// saved status can release its booking. Reopening makes it block again.
+export function blockingCalendarEvents(events, daily) {
+  const completed = new Set(daily.tasks.filter(task => task.calendarEvent && !task.calendarEvent.deleted && task.versions.at(-1)?.status === 'completed').map(task => task.id));
+  return events.filter(event => !completed.has(event.id));
+}

@@ -1,3 +1,4 @@
+import { blockingCalendarEvents } from './daily-calendar.js';
 import { FacultyStore } from './faculty.js';
 import { FacultyScheduling } from './faculty-scheduling.js';
 import { GroupStore } from './groups.js';
@@ -229,11 +230,12 @@ export async function createApp(root, { now = Date.now, appRoot = path.dirname(f
     const academic = await timetables.read(), current = await calendar.read();
     const savedIds = new Set(current.document.events.map(e => e.id));
     const events = proposed ? draftEvents : [...current.document.events, ...draftEvents.filter(e => !savedIds.has(e.id))];
-    const result = checkConversation(event, student.document, academic.document, events, now());
-    return { ...result, acknowledgement: digest(JSON.stringify([event, student.revision, academic.revision, current.revision, result.conflicts])) };
+    const completion = await daily.readStored();
+    const result = checkConversation(event, student.document, academic.document, blockingCalendarEvents(events, completion.document), now());
+    return { ...result, acknowledgement: digest(JSON.stringify([event, student.revision, academic.revision, current.revision, completion.revision, result.conflicts])) };
   };
-  const facultyScheduling = new FacultyScheduling({ faculty, calendar, now });
-  const groupScheduling = new GroupScheduling({ groups, students, calendar, timetables, now });
+  const facultyScheduling = new FacultyScheduling({ faculty, calendar, daily, now });
+  const groupScheduling = new GroupScheduling({ groups, students, calendar, timetables, daily, now });
   const kernels = new KernelService(store), terminals = new TerminalService(store);
   store.beforeTransfer = async (input, location) => {
     if (location.scope !== 'active') return;
