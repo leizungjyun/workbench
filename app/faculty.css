@@ -1,0 +1,7 @@
+.faculty-conversations { margin-top: 24px; }
+.faculty-task { display: grid; grid-template-columns: minmax(0, 2fr) minmax(120px, 1fr) minmax(140px, 1fr); gap: 10px; align-items: end; padding: 14px 0; border-top: 1px solid #e6e9df; }
+.faculty-task > .student-check { grid-column: 1 / -1; margin: 0; }
+.faculty-task > button { justify-self: start; }
+.faculty-profile-dialog .student-profile-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.faculty-conversations .student-preparation > a { display: block; margin: 12px 0; color: #365743; }
+@media (max-width: 600px) { .faculty-task, .faculty-profile-dialog .student-profile-fields { grid-template-columns: minmax(0, 1fr); } }

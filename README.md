@@ -1,6 +1,6 @@
 # Workbench
 
-A single-user local workspace for Markdown and Jupyter notebooks, mixed-file projects, daily planning, calendars, and student supervision. Application code and private workspace data are stored separately.
+A single-user local workspace for Markdown and Jupyter notebooks, mixed-file projects, daily planning, calendars, student supervision, and faculty conversations. Application code and private workspace data are stored separately.
 
 ## Start
 
@@ -27,7 +27,7 @@ Collections supports Markdown, Jupyter, ordinary UTF-8 text, images, PDFs, and o
 
 Changes autosave after 750 ms. Cmd/Ctrl+S saves immediately. Revision conflicts retain drafts and require explicit reload or overwrite. Browser drafts help recovery but do not replace backups. Vim is enabled by default; Esc or Ctrl+[ leaves Insert mode. Tab indents; Shift+Tab removes indentation. Ctrl+M (Shift+Alt+M on macOS) toggles Tab focus navigation.
 
-Search includes active and archived filenames and supported text contents, plus Daily and student records. Trash is excluded. PDF/image/binary contents are not indexed. Jupyter searches cell source rather than saved outputs.
+Search includes active and archived filenames and supported text contents, plus Daily, Student, Group, and Faculty records. Trash is excluded. PDF/image/binary contents are not indexed. Jupyter searches cell source rather than saved outputs.
 
 Sidebar icons appear on hover/focus and act on their own file or folder. Pin, rename/move, archive, and trash files; create notebooks or subfolders. Archive and Trash support read-only previews and restoration with collision dialogs. Folders retain all nested files, including hidden/generated files omitted from navigation. Nothing in Trash expires automatically.
 
@@ -35,7 +35,7 @@ Cmd+B toggles the sidebar and Cmd+J the workspace terminal on macOS; use Ctrl+B/
 
 ## Private storage and backups
 
-A workspace contains `collections/` and `.notebook/`. The latter stores student records, Daily, calendars, timetables, backups/versions, attachment mappings, Archive, Trash, and import settings. **It is essential user data, not a disposable cache.** Back up the entire workspace. Hidden folders and Git-ignore rules do not provide encryption. Do not store sensitive credentials here unless you accept ordinary unencrypted files.
+A workspace contains `collections/` and `.notebook/`. The latter stores Student, Group, and Faculty records, Daily, calendars, timetables, backups/versions, attachment mappings, Archive, Trash, and import settings. **It is essential user data, not a disposable cache.** Back up the entire workspace. Hidden folders and Git-ignore rules do not provide encryption. Do not store sensitive credentials here unless you accept ordinary unencrypted files.
 
 This public repository includes application code and synthetic fixtures only. Never copy private workspaces, import exports, logs, or previous private Git history into it. Use a separate private repository or backup system for personal files.
 
@@ -50,6 +50,12 @@ Daily task rows use a chevron for Details and a trash icon for Remove. Expanded 
 Daily keeps dated task histories, subtasks, categories, notes, and completion states. **Import from Markdown** selects a source note and inclusive date range, previews changes, and applies them with source/Daily revision checks. Repeated imports do not duplicate dates. Import preferences are stored privately.
 
 Calendar supports events, student conversations, class overlays, conflict review, and local reminders. Students supports profiles, meeting preparation, meeting records, goals, and timetable imports. Scheduling a student conversation creates a Calendar event in the Students category and a linked Daily record titled with the student’s name. Completing or reopening that Daily record updates Calendar’s completion indicator. Student note fields show raw Markdown while editing, then render the formatted preview in the same area after Done editing. Existing rich-text notes remain readable and editable. Each supervision record includes a Correction field. The Supervision Record section sits directly below Next Conversation, independently of the height of the Objectives sidebar, on desktop and mobile. Exports and private import files remain workspace data. The fixture under `tests/fixtures/` uses invented people and schedules.
+
+### Faculty conversations
+
+**Faculty** keeps professional profiles, conversation preparation, conversation records, and follow-up tasks without objectives or course timetables. Only a member’s name is required; institution, department, position/title, email, research areas, and Markdown profile notes are optional. Next Conversation sits directly above Conversation Records on desktop and mobile. Start conversation moves the agenda into Discussion and clears preparation in a single save. Records include Decisions and Correction; tasks have an owner (Me or Faculty member), due date, and completion state, with unfinished tasks linked from preparation.
+
+Scheduling defaults to a 30-minute conversation in the **Faculty** category. It checks your Calendar only and uses inline conflict acknowledgment; it does not establish your colleague’s availability. Calendar and Daily link back to the member. Rescheduling retains the linked Daily record; completing or reopening that record updates Calendar. Deleting a booking preserves conversation notes and follow-up tasks. Profiles and notes use the same Markdown editing, autosave, draft recovery, revision checks, archive/restore, search, export, and duplicate-tab protections as Students. Faculty documents and version history stay in `.notebook/faculty/` and `.notebook/faculty-versions/` inside the private workspace.
 
 ### Group sessions
 

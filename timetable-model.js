@@ -107,10 +107,17 @@ export function checkConversation(event, student, academic, events, now = Date.n
   let day=first, incomplete=false; const classes=[];
   for (let i=0;day<=last && i<370;i++,day=shiftDate(day,1)) { const r=classesOnDate(student,academic,day); classes.push(...r.classes); incomplete ||= r.incomplete; }
   if (day<=last) fail('Conversation interval is too long.');
+  return checkAvailability(event, events, now, zone, classes, classesOnDate(student,academic,first), incomplete);
+}
+export function checkCalendarAvailability(event, events, now = Date.now()) {
+  return checkAvailability(event, events, now, event.timeZone || 'Asia/Shanghai', [], { classes: [], incomplete: false }, false);
+}
+function checkAvailability(event, events, now, zone, classes, dateClasses, incomplete) {
+  const end = eventEnd(event); if (!end) fail('Conversations require a duration or end time.');
+  const first = localParts(event.start, zone).date;
   const interval={...event,end};
   const busy=events.filter(e=>e.id!==event.id).map(e=>({...e,end:eventEnd(e)||new Date(Date.parse(e.start)+1).toISOString()}));
   const conflicts=[...classes.filter(c=>overlaps(interval,c)).map(c=>({type:'class',title:c.name,start:c.start,end:c.end})),...busy.filter(e=>overlaps(interval,e)).map(e=>({type:'event',eventId:e.id,title:e.title,start:e.start,end:e.end}))];
-  const dateClasses=classesOnDate(student,academic,first);
   const duration=Date.parse(end)-Date.parse(event.start), slots=[], freeWindows=[];
   const dayOpening=Date.parse(schoolInstant(first,'08:30',zone));
   const opening=Math.max(dayOpening,Number(now));

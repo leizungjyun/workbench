@@ -172,6 +172,7 @@ export class DailyWorkspace {
         if (metadata.length) item.append(el('p', metadata.join(' · '), 'daily-muted'));
         if (state.details) { const rich = el('div', '', 'daily-preview-rich'); renderMarkdown(rich, state.details); item.append(rich); }
         for (const subtask of state.subtasks) item.append(el('p', `${subtask.done ? '✓' : '○'} ${subtask.text}`, 'daily-preview-subtask'));
+        if (state.facultyId) { const link = el('a', 'Open faculty member'); link.href = `?view=faculty&id=${state.facultyId}`; item.append(link); }
         if (state.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${state.groupId}&session=${state.groupSessionId}`; item.append(link); }
         section.append(item);
       }
@@ -192,6 +193,7 @@ export class DailyWorkspace {
     top.append(checkbox, title, toggle, remove); row.append(top);
     const latest = task.versions.at(-1); const meta = el('div', '', 'daily-muted');
     meta.textContent = `${task.originDate < this.date ? `From ${task.originDate} · ` : ''}${state.status}${state.scheduledDate > this.date ? ` · Scheduled ${state.scheduledDate}` : ''}${state.time ? ` · ${state.time}` : ''}${state.deadline ? ` · Due ${state.deadline}` : ''}${latest.date > this.date ? ` · Later ${latest.status} on ${latest.date}` : ''}`; row.append(meta);
+    if (state.facultyId) { const link = el('a', 'Open faculty member'); link.href = `?view=faculty&id=${state.facultyId}`; link.onclick = async e => { if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();if(await this.flush())location.href=link.href; }; row.append(link); const booking = this.calendar?.events.find(e => e.id === task.id); if(booking) { const reschedule = el('a', 'Reschedule in Calendar'); reschedule.href = `?view=calendar&date=${state.scheduledDate}&event=${booking.id}`; reschedule.onclick = async e => {e.preventDefault();if(await this.flush())location.href=reschedule.href;};row.append(reschedule); } }
     if (state.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${state.groupId}&session=${state.groupSessionId}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; row.append(link); }
     const event = this.calendar?.events.find(e => e.id === task.id && e.studentId);
     if (event) {
@@ -208,7 +210,8 @@ export class DailyWorkspace {
       const block = name => { const section = el('section', '', 'daily-detail-block'); section.setAttribute('aria-label', name); section.append(el('h3', name)); return section; };
       const settings = block('Task settings'), fields = el('div', '', 'daily-fields');
       fields.append(this.select('Category', state.categoryId, this.data.categories.map(c => [c.id, c.name]), value => { this.patch(task, { categoryId: value }); this.render(); }), this.select('Student', state.studentId, [['', 'No student'], ...this.roster.map(s => [s.id, s.name]), ...(!this.roster.some(s => s.id === state.studentId) && state.studentId ? [[state.studentId, 'Unavailable student']] : [])], value => { this.patch(task, { studentId: value }); this.render(); }));
-      if (task.calendarEvent) { fields.querySelector('[aria-label="Student"]').disabled = true; settings.append(el('p', 'Change this task’s student in Calendar.', 'daily-muted')); }
+      if (state.facultyId) fields.querySelector('[aria-label="Student"]').closest('label').remove();
+      else if (task.calendarEvent) { fields.querySelector('[aria-label="Student"]').disabled = true; settings.append(el('p', 'Change this task’s student in Calendar.', 'daily-muted')); }
       settings.append(fields);
       if (state.studentId) { const link = el('a', 'Open student'); link.href = `?view=student&id=${state.studentId}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; settings.append(link); }
       const timing = block('Timing');

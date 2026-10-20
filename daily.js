@@ -31,6 +31,7 @@ export class DailyStore {
     if (this.groups && !document.categories.some(c => c.id === 'category-group') && (await this.groups.list()).groups.length) {
       document.categories.push({ id: 'category-group', name: 'Group', hidden: false }); changed = true;
     }
+    if (this.faculty && !document.categories.some(c => c.id === 'category-faculty') && (await this.faculty.list()).faculty.length) { document.categories.push({ id: 'category-faculty', name: 'Faculty', hidden: false }); changed = true; }
     if (this.calendar) changed = syncCalendarTasks(document, (await this.calendar.read()).document) || changed;
     if (changed) return this.write(previous, document);
     return previous;

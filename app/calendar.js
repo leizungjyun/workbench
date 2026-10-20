@@ -89,8 +89,8 @@ export class CalendarWorkspace {
     this.parent.inert = true;
     try {
       await this.api('/api/calendar');
-      const [daily, academic, records] = await Promise.all([this.api('/api/daily'), this.api('/api/timetables'), this.api('/api/students/export')]);
-      this.loadDaily(daily); this.academic = academic.document; this.students = records.students; this.overlayIds ||= new Set(); await this.enter();
+      const [daily, academic, records, facultyRecords] = await Promise.all([this.api('/api/daily'), this.api('/api/timetables'), this.api('/api/students/export'), this.api('/api/faculty/export')]);
+      this.loadDaily(daily); this.academic = academic.document; this.students = records.students; this.faculty = facultyRecords.faculty; this.overlayIds ||= new Set(); await this.enter();
       this.readOnly = !await this.acquire(); this.load(await this.api('/api/calendar'), true);
       this.date = date; this.render();
       if (push && location.search !== this.url) history.pushState(null, '', this.url);
@@ -161,6 +161,7 @@ export class CalendarWorkspace {
     if (row.classList.contains('completed')) row.append(el('span', 'Completed in Daily', 'calendar-completed-label'));
     row.append(el('p', new Date(event.start).toLocaleString()));
     if (event.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${event.groupId}&session=${event.groupSessionId}`; link.onclick = async e => { if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();if(await this.flush())location.href=link.href; }; row.append(link); }
+    if (event.facultyId) { const link = el('a', 'Open faculty member'); link.href = `?view=faculty&id=${event.facultyId}`; link.onclick = async e => { if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();if(await this.flush())location.href=link.href; }; row.append(link); }
     if (event.studentId) row.append(el('p', `Student: ${this.students?.find(s => s.id === event.studentId)?.profile.name || 'Unavailable student'}`));
     if (event.location) row.append(el('p', event.location));
     const end = eventEnd(event);
@@ -196,10 +197,18 @@ export class CalendarWorkspace {
     for (const [id, name] of [['', 'No student'], ...(this.students || []).map(s => [s.id, s.profile.name])]) { const option = el('option', name); option.value = id; studentSelect.append(option); }
     studentSelect.value = recovered?.studentId ?? event?.studentId ?? defaults.studentId ?? ''; fields.studentId = studentSelect;
     studentWrap.append(el('span', 'Conversation student'), studentSelect); if (!event?.groupId) form.append(studentWrap);
+    const facultyWrap = el('label', '', 'calendar-field'), facultySelect = el('select'); facultySelect.setAttribute('aria-label', 'Conversation faculty member');
+    for (const [id, name] of [['', 'No faculty member'], ...(this.faculty || []).map(m => [m.id, m.profile.name])]) { const option = el('option', name); option.value = id; facultySelect.append(option); }
+    facultySelect.value = recovered?.facultyId ?? event?.facultyId ?? defaults.facultyId ?? ''; fields.facultyId = facultySelect;
+    facultyWrap.append(el('span', 'Conversation faculty member'), facultySelect); if (!event?.groupId) form.append(facultyWrap);
+    const updateConversationTarget = () => { studentWrap.hidden = !!fields.facultyId.value; facultyWrap.hidden = !!fields.studentId.value; };
+    updateConversationTarget();
+    if (event?.facultyId) facultySelect.disabled = true;
     const preview = el('section', '', 'conversation-preview'); preview.setAttribute('aria-label', 'Conversation timetable'); form.append(preview);
     const makeCandidate = () => {
       const candidate = { id: event?.id || (this.formEventId ||= crypto.randomUUID()), title: fields.title.value.trim() || 'Conversation', start: utcFromLocal(fields.start.value), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
       if (event?.groupId) Object.assign(candidate, { groupId: event.groupId, groupSessionId: event.groupSessionId, participantIds: [...event.participantIds] });
+      if (fields.facultyId.value && !event?.groupId) candidate.facultyId = fields.facultyId.value;
       if (fields.studentId.value && !event?.groupId) candidate.studentId = fields.studentId.value;
       if (fields.categoryId.value) candidate.categoryId = fields.categoryId.value;
       if (fields.location.value.trim()) candidate.location = fields.location.value.trim();
@@ -210,18 +219,20 @@ export class CalendarWorkspace {
         if (name && !candidate.title.includes(name)) candidate.title = `${name} · ${candidate.title}`;
         candidate.categoryId = this.categories.find(c => c.name === 'Students')?.id || 'category-1';
       }
+      if (candidate.facultyId) candidate.categoryId = 'category-faculty';
       return candidate;
     };
     const conflicts = new SchedulingConflicts(() => this.students.find(s => s.id === fields.studentId.value)?.profile.name || 'Student');
     let expiryTimer;
     const showCheck = checked => {
       clearTimeout(expiryTimer);
-      preview.replaceChildren(el('h3', event?.groupId ? 'Group availability' : 'Student timetable'));
+      preview.replaceChildren(el('h3', fields.facultyId.value ? 'Your Calendar availability' : event?.groupId ? 'Group availability' : 'Student timetable'));
       preview.append(participantAvailability(checked));
       if (checked.past) preview.append(el('p', 'The selected starting time is in the past.', 'timetable-warning'));
       if (checked.incomplete) preview.append(el('p', 'Availability incomplete: missing timetable or pending course details.', 'timetable-warning'));
+      if (fields.facultyId.value) preview.append(el('p', 'Checks your Calendar only; the faculty member’s availability is not known.', 'calendar-muted'));
       for (const c of checked.classes) preview.append(el('p', `${c.localStart}–${c.localEnd} ${c.name} · ${c.location}`));
-      if (!checked.classes.length) preview.append(el('p', 'No confirmed classes on this date.'));
+      if (!fields.facultyId.value && !checked.classes.length) preview.append(el('p', 'No confirmed classes on this date.'));
       preview.append(conflicts.render(checked));
       preview.append(el('h4', checked.incomplete ? 'Possible slots (availability incomplete)' : 'Free slots on this date'));
       const schoolTime = instant => new Date(instant).toLocaleTimeString('en-GB', { timeZone: checked.timeZone, hour: '2-digit', minute: '2-digit' });
@@ -250,10 +261,10 @@ export class CalendarWorkspace {
     let previewRequest = 0;
     const updatePreview = async () => {
       const request = ++previewRequest;
-      preview.hidden = !fields.studentId.value && !event?.groupId; if (preview.hidden) return;
+      preview.hidden = !fields.studentId.value && !fields.facultyId.value && !event?.groupId; if (preview.hidden) return;
       try {
-        if (event?.groupId) {
-          const checked = await this.api(`/api/groups/${event.groupId}/check`, 'POST', { event: makeCandidate(), draftEvents: this.data.events });
+        if (event?.groupId || fields.facultyId.value) {
+          const checked = await this.api(fields.facultyId.value ? `/api/faculty/${fields.facultyId.value}/check` : `/api/groups/${event.groupId}/check`, 'POST', { event: makeCandidate(), draftEvents: this.data.events });
           if (request === previewRequest && dialog.open && !submit.disabled) showCheck(checked);
           return;
         }
@@ -273,13 +284,15 @@ export class CalendarWorkspace {
     const error = el('p', '', 'form-error'); error.setAttribute('role', 'alert'); const submit = el('button', 'Save event', 'primary'); submit.type = 'submit';
     const persistForm = () => { this.formDirty = true; const value = { calendarId: this.data.id, id: event?.id || this.formEventId, ...Object.fromEntries(Object.entries(fields).map(([key, input]) => [key, input.value])) }; try { localStorage.setItem('fieldnotes-calendar-form', JSON.stringify(value)); } catch { /* disk saves still work */ } };
     if (recovered) this.formDirty = true;
-    form.append(el('p', 'Choose a duration or an end time. Student conversations require one; other events may leave both blank.', 'calendar-muted'));
-    const setStudentDuration = () => { if (fields.studentId.value && !fields.duration.value && !fields.end.value) fields.duration.value = '30'; };
-    if (fields.studentId.value && !recovered) setStudentDuration();
+    form.append(el('p', 'Choose a duration or an end time. Student and Faculty conversations require one; other events may leave both blank.', 'calendar-muted'));
+    const setStudentDuration = () => { if ((fields.studentId.value || fields.facultyId.value) && !fields.duration.value && !fields.end.value) fields.duration.value = '30'; };
+    if ((fields.studentId.value || fields.facultyId.value) && !recovered) setStudentDuration();
     form.oninput = e => {
       if (e.target.closest('.scheduling-conflicts')) return;
       conflicts.reset();
-      if (e.target === fields.studentId) setStudentDuration();
+      if (e.target === fields.studentId) { fields.facultyId.value = ''; setStudentDuration(); }
+      if (e.target === fields.facultyId) { fields.studentId.value = ''; setStudentDuration(); }
+      updateConversationTarget();
       if (e.target === fields.start && fields.start.value) {
         const date = fields.start.value.slice(0, 10);
         if (!fields.endDate.value || fields.endDate.value === startingDate) fields.endDate.value = date;
@@ -299,15 +312,15 @@ export class CalendarWorkspace {
       Object.values(fields).forEach(input => { input.disabled = true; }); dialog.querySelector('button').disabled = true; preview.querySelectorAll('button').forEach(b => { b.disabled = true; });
       try {
         const candidate = makeCandidate();
-        if ((candidate.studentId || candidate.groupId) && !this.dirty && !this.conflict) {
+        if ((candidate.studentId || candidate.groupId || candidate.facultyId) && !this.dirty && !this.conflict) {
           const latest = await this.api('/api/calendar');
           if (latest.revision !== this.revision) {
             if (event && JSON.stringify(latest.document.events.find(item => item.id === event.id)) !== JSON.stringify(event)) throw new Error('This event changed elsewhere. Your form is preserved; close it and reopen the latest event before saving.');
             this.load(latest);
           }
         }
-        if (candidate.studentId || candidate.groupId) {
-          const checked = await this.api(candidate.groupId ? `/api/groups/${candidate.groupId}/check` : '/api/timetables/check', 'POST', { event: candidate, draftEvents: this.data.events }); showCheck(checked);
+        if (candidate.studentId || candidate.groupId || candidate.facultyId) {
+          const checked = await this.api(candidate.facultyId ? `/api/faculty/${candidate.facultyId}/check` : candidate.groupId ? `/api/groups/${candidate.groupId}/check` : '/api/timetables/check', 'POST', { event: candidate, draftEvents: this.data.events }); showCheck(checked);
           if (!conflicts.accepted(checked)) { error.textContent = 'Review the conflicts and select “Save despite these conflicts” to continue.'; conflicts.checkbox?.focus(); return; }
           this.acknowledgements ||= {}; this.acknowledgements[candidate.id] = checked.acknowledgement;
         }
@@ -315,7 +328,7 @@ export class CalendarWorkspace {
         if (index < 0) next.events.push(candidate); else next.events[index] = candidate; validateCalendar(next);
         this.data = next; persistForm(); this.formDirty = false; this.cache(); await this.save(); this.formEventId = null; try { localStorage.removeItem('fieldnotes-calendar-form'); } catch { /* optional cache */ } dialog.close(); this.render(); this.parent.querySelector('#calendar-add-event')?.focus();
       } catch (e) { conflicts.reset(); error.textContent = e.message; this.updateStatus(); }
-      finally { submit.disabled = false; Object.values(fields).forEach(input => { input.disabled = false; }); dialog.querySelector('button').disabled = false; preview.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
+      finally { submit.disabled = false; Object.values(fields).forEach(input => { input.disabled = input === facultySelect && !!event?.facultyId; }); dialog.querySelector('button').disabled = false; preview.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
     };
     form.append(error, submit); dialog.append(form); updatePreview(); fields.title.focus();
   }

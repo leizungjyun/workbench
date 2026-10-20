@@ -1,3 +1,4 @@
+import { FacultyWorkspace } from './faculty.js';
 import { GroupWorkspace } from './groups.js';
 import { CalendarWorkspace } from './calendar.js';
 import { CalendarReminders } from './calendar-reminders.js';
@@ -117,6 +118,19 @@ async function openStudents(id, push = true) {
   try { return await students.open(id, push); } finally { navigating = false; }
 }
 $('students-launch').onclick = () => openStudents();
+const faculty = new FacultyWorkspace({ schedule: async (facultyId, date) => {
+  if (!await openCalendar(date)) return;
+  const name = calendar.faculty.find(m => m.id === facultyId)?.profile.name;
+  calendar.edit(undefined, undefined, { facultyId, title: `${name || 'Faculty member'} · Conversation`, categoryId: 'category-faculty', duration: '30' });
+}, parent: $('faculty-workspace'), api, notice, prepare: flush, navigate: id => openFaculty(id), enter: async () => {
+  tabs.release(); clearTimeout(saveTimer); clearTimeout(previewTimer); current = null; savedContent = '';
+  setScreen('faculty-workspace'); renderSidebar(); return true;
+} });
+async function openFaculty(id, push = true, sessionId) {
+  if (navigating) return false; navigating = true;
+  try { return await faculty.open(id, push, sessionId); } finally { navigating = false; }
+}
+$('faculty-launch').onclick = () => openFaculty();
 const groups = new GroupWorkspace({ parent: $('groups-workspace'), api, notice, prepare: flush, navigate: id => openGroups(id), enter: async () => {
   tabs.release(); clearTimeout(saveTimer); clearTimeout(previewTimer); current = null; savedContent = '';
   setScreen('groups-workspace'); renderSidebar(); return true;
@@ -173,7 +187,7 @@ async function save(force = false) {
   })();
   return saving;
 }
-async function flush() { if (!await calendar.flush()) return false; if (!await daily.flush()) return false; if (!await students.flush()) return false; if (!await groups.flush()) return false; if (jupyter.running || jupyter.starting) { notice('Wait for the kernel operation to finish, or interrupt it before switching notebooks.'); return false; } try { await save(); return true; } catch (e) { notice(e.message); return false; } }
+async function flush() { if (!await calendar.flush()) return false; if (!await daily.flush()) return false; if (!await students.flush()) return false; if (!await groups.flush()) return false; if (!await faculty.flush()) return false; if (jupyter.running || jupyter.starting) { notice('Wait for the kernel operation to finish, or interrupt it before switching notebooks.'); return false; } try { await save(); return true; } catch (e) { notice(e.message); return false; } }
 $('save-note').onclick = () => save().catch(e => notice(e.message));
 $('overwrite-note').onclick = () => { if (confirm('Replace the disk version with your current draft?')) save(true).catch(e => notice(e.message)); };
 $('reload-note').onclick = async () => {
@@ -185,16 +199,17 @@ function setScreen(next) {
   if (next !== 'daily-workspace' && screen === 'daily-workspace') daily.close();
   if (next !== 'students-workspace' && screen === 'students-workspace') students.close();
   if (next !== 'groups-workspace' && screen === 'groups-workspace') groups.close();
+  if (next !== 'faculty-workspace' && screen === 'faculty-workspace') faculty.close();
   screen = next;
-  for (const id of ['welcome', 'notebook', 'search-view', 'students-workspace', 'groups-workspace', 'daily-workspace', 'calendar-workspace']) $(id).hidden = id !== next;
+  for (const id of ['welcome', 'notebook', 'search-view', 'students-workspace', 'groups-workspace', 'faculty-workspace', 'daily-workspace', 'calendar-workspace']) $(id).hidden = id !== next;
   const topbar = document.querySelector('.topbar');
   const notebookOpen = next === 'notebook';
   const header = notebookOpen ? document.querySelector('.note-heading-context') : topbar;
-  const studentOpen = next === 'calendar-workspace' || next === 'students-workspace' || next === 'groups-workspace' || next === 'daily-workspace';
+  const studentOpen = next === 'faculty-workspace' || next === 'calendar-workspace' || next === 'students-workspace' || next === 'groups-workspace' || next === 'daily-workspace';
   const sidebarToggle = $('toggle-sidebar'); sidebarToggle.classList.toggle('student-navigation-toggle', studentOpen);
   if (studentOpen) document.querySelector('.shell').insertBefore(sidebarToggle, document.querySelector('main')); else header.prepend(sidebarToggle);
   topbar.hidden = notebookOpen || studentOpen;
-  $('breadcrumb').textContent = next === 'groups-workspace' ? 'Group supervision' : next === 'students-workspace' ? 'Student supervision' : next === 'search-view' ? 'Search your collection' : 'Your collection';
+  $('breadcrumb').textContent = next === 'faculty-workspace' ? 'Faculty conversations' : next === 'groups-workspace' ? 'Group supervision' : next === 'students-workspace' ? 'Student supervision' : next === 'search-view' ? 'Search your collection' : 'Your collection';
   if (notebookOpen) $('note-folder').textContent = (current.readOnly ? `${current.scope === 'archive' ? 'Archive' : 'Trash'} / ` : '') + current.path;
   workspaceTerminal.setNote(current, notebookOpen);
   if (matchMedia('(max-width: 760px)').matches) document.body.classList.remove('sidebar-open');
@@ -306,7 +321,7 @@ async function runSearch() {
   $('search-summary').textContent = 'Searching…';
   try {
     const result = await api(`/api/search?q=${encodeURIComponent(query)}`); if (id !== searchId) return;
-    const count = result.notes.length + (result.daily?.length || 0) + (result.students?.length || 0) + (result.groups?.length || 0), kind = result.daily?.length || result.students?.length || result.groups?.length ? 'result' : 'notebook';
+    const count = result.notes.length + (result.daily?.length || 0) + (result.students?.length || 0) + (result.groups?.length || 0) + (result.faculty?.length || 0), kind = result.daily?.length || result.students?.length || result.groups?.length || result.faculty?.length ? 'result' : 'notebook';
     $('search-summary').textContent = `${count} matching ${kind}${count === 1 ? '' : 's'} · ${result.occurrences} text match${result.occurrences === 1 ? '' : 'es'}`;
     $('search-results').replaceChildren(...result.notes.map(note => {
       const group = text('section', '', 'result-group'), heading = text('a', '', 'result-title'); heading.append(icon('file'), text('strong', title(note.path)), text('span', `${note.count} ${note.count === 1 ? 'match' : 'matches'}`, 'match-badge')); if (note.scope === 'archive') heading.append(text('span', 'Archive', 'archive-badge')); const ref = { scope: note.scope || 'active', id: note.id, path: note.scope === 'archive' ? note.storedPath : note.path, kind: 'note' }; bindNotebookLink(heading, ref, note.matches[0]); group.append(heading, text('div', note.path, 'result-path'));
@@ -332,6 +347,16 @@ async function runSearch() {
       if (item.count > item.matches.length) group.append(text('p', `Showing the first ${item.matches.length} of ${item.count} matches.`, 'result-path'));
       $('search-results').append(group);
     }
+    for (const item of result.faculty || []) {
+      const group = text('section', '', 'result-group'), heading = text('a', '', 'result-title');
+      heading.append(text('strong', `Faculty · ${item.name}`), text('span', `${item.count} ${item.count === 1 ? 'match' : 'matches'}`, 'match-badge'));
+      if (item.archived) heading.append(text('span', 'Archived faculty member', 'archive-badge'));
+      const bind = (link, match) => { link.href = `?view=faculty&id=${item.id}${match?.sessionId ? `&session=${match.sessionId}` : ''}`; link.onclick = async event => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); if (await openFaculty(item.id)) faculty.focusMatch(match); }; };
+      bind(heading, item.matches[0]); group.append(heading);
+      for (const match of item.matches) { const link = text('a', '', 'result-snippet'); link.append(text('span', `${match.section} · `), highlightedSnippet(match)); bind(link, match); group.append(link); }
+      if (item.count > item.matches.length) group.append(text('p', `Showing the first ${item.matches.length} of ${item.count} matches.`, 'result-path'));
+      $('search-results').append(group);
+    }
     for (const item of result.groups || []) {
       const section = text('section', '', 'result-group'), heading = text('a', `Group · ${item.name}${item.archived ? ' · Archived' : ''}`, 'result-title');
       const bind = (link, match) => { link.href = `?view=group&id=${item.id}${match?.sessionId ? `&session=${match.sessionId}` : ''}`; link.onclick = async e => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); if (await openGroups(item.id)) groups.focusMatch(match); }; };
@@ -339,7 +364,7 @@ async function runSearch() {
       for (const match of item.matches) { const link = text('a', '', 'result-snippet'); link.append(text('span', `${match.section} · `), highlightedSnippet(match)); bind(link, match); section.append(link); }
       $('search-results').append(section);
     }
-    if (!result.notes.length && !result.daily?.length && !result.students?.length && !result.groups?.length) $('search-results').append(text('p', 'No results found. Try a different word or a shorter phrase.', 'empty-message'));
+    if (!result.notes.length && !result.daily?.length && !result.students?.length && !result.groups?.length && !result.faculty?.length) $('search-results').append(text('p', 'No results found. Try a different word or a shorter phrase.', 'empty-message'));
   } catch (e) { if (id === searchId) { $('search-summary').textContent = e.message; $('search-results').replaceChildren(); } }
 }
 function highlightDailyMatch(query) {
@@ -516,8 +541,8 @@ document.addEventListener('keydown', event => {
   event.preventDefault(); event.stopImmediatePropagation(); if (event.repeat) return;
   if (event.key.toLowerCase() === 'b') toggleSidebar(); else if (!$('path-dialog').open) workspaceTerminal.toggle();
 }, true);
-document.addEventListener('keydown', e => { if (e.target.closest?.('#terminal-panel')) return; if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); (screen === 'calendar-workspace' ? (calendar.parent.querySelector('form') ? Promise.resolve(calendar.parent.querySelector('form').requestSubmit()) : calendar.save()) : screen === 'daily-workspace' ? daily.save() : screen === 'groups-workspace' ? (groups.parent.querySelector('form') ? Promise.resolve(groups.parent.querySelector('form').requestSubmit()) : groups.save()) : screen === 'students-workspace' ? students.save() : save()).catch(error => notice(error.message)); } if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); launchSearch(); } if (e.key === 'Escape' && screen === 'search-view' && !$('path-dialog').open) { if (current) setScreen('notebook'); else home(); } });
-window.addEventListener('beforeunload', e => { if (calendar.dirty || calendar.formDirty || daily.dirty || students.dirty || groups.dirty || groups.uploading || !!groups.parent.querySelector('.group-schedule-dialog[open]') || dirty() || jupyter.running || jupyter.starting) { cacheDraft(); e.preventDefault(); e.returnValue = ''; } });
+document.addEventListener('keydown', e => { if (e.target.closest?.('#terminal-panel')) return; if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); (screen === 'calendar-workspace' ? (calendar.parent.querySelector('form') ? Promise.resolve(calendar.parent.querySelector('form').requestSubmit()) : calendar.save()) : screen === 'daily-workspace' ? daily.save() : screen === 'groups-workspace' ? (groups.parent.querySelector('form') ? Promise.resolve(groups.parent.querySelector('form').requestSubmit()) : groups.save()) : screen === 'faculty-workspace' ? (faculty.profileEditor?.open ? Promise.resolve(faculty.profileEditor.querySelector('form').requestSubmit()) : faculty.save()) : screen === 'students-workspace' ? students.save() : save()).catch(error => notice(error.message)); } if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); launchSearch(); } if (e.key === 'Escape' && screen === 'search-view' && !$('path-dialog').open) { if (current) setScreen('notebook'); else home(); } });
+window.addEventListener('beforeunload', e => { if (calendar.dirty || calendar.formDirty || daily.dirty || students.dirty || faculty.dirty || faculty.starting || faculty.profileEditor?.open || groups.dirty || groups.uploading || !!groups.parent.querySelector('.group-schedule-dialog[open]') || dirty() || jupyter.running || jupyter.starting) { cacheDraft(); e.preventDefault(); e.returnValue = ''; } });
 let checkingExternal = false;
 async function checkExternal() {
   if (checkingExternal || navigating || jupyter.running || jupyter.starting) return;
@@ -559,12 +584,14 @@ window.addEventListener('popstate', async () => {
   if (params.get('view') === 'calendar') await openCalendar(params.get('date') || undefined, false);
   else if (params.get('view') === 'daily') await openDaily(params.get('date') || undefined, params.get('task'), false);
   else if (params.get('view') === 'groups' || params.get('view') === 'group') await openGroups(params.get('view') === 'group' ? params.get('id') : undefined, false, params.get('session'));
+  else if (params.get('view') === 'faculty') await openFaculty(params.get('id') || undefined, false, params.get('session'));
   else if (params.get('view') === 'students' || params.get('view') === 'student') await openStudents(params.get('view') === 'student' ? params.get('id') : undefined, false);
   else if (params.has('path')) await openReference(Object.fromEntries(params)); else await home();
   // A failed save can refuse navigation; keep the URL attached to the preserved draft.
   if (screen === 'calendar-workspace') history.replaceState(null, '', calendar.url);
   else if (screen === 'daily-workspace') history.replaceState(null, '', daily.url);
   else if (screen === 'groups-workspace') history.replaceState(null, '', groups.url);
+  else if (screen === 'faculty-workspace') history.replaceState(null, '', faculty.url);
   else if (screen === 'students-workspace') history.replaceState(null, '', students.url);
   else if (current) history.replaceState(null, '', notebookUrl(noteRef(current)));
 });
@@ -589,4 +616,4 @@ $('save-copy').onclick = async () => {
     await refresh();
   } catch (e) { notice(e.message); }
 };
-setMode(mode); refresh().then(() => { const params = new URLSearchParams(location.search); if (params.get('view') === 'calendar') return openCalendar(params.get('date') || undefined, false); if (params.get('view') === 'daily') return openDaily(params.get('date') || undefined, params.get('task'), false); if (params.get('view') === 'groups' || params.get('view') === 'group') return openGroups(params.get('view') === 'group' ? params.get('id') : undefined, false, params.get('session')); if (params.get('view') === 'students' || params.get('view') === 'student') return openStudents(params.get('view') === 'student' ? params.get('id') : undefined, false); if (params.has('path')) return openReference(Object.fromEntries(params)); }).catch(e => notice(`Could not load your collection: ${e.message}`));
+setMode(mode); refresh().then(() => { const params = new URLSearchParams(location.search); if (params.get('view') === 'calendar') return openCalendar(params.get('date') || undefined, false); if (params.get('view') === 'daily') return openDaily(params.get('date') || undefined, params.get('task'), false); if (params.get('view') === 'groups' || params.get('view') === 'group') return openGroups(params.get('view') === 'group' ? params.get('id') : undefined, false, params.get('session')); if (params.get('view') === 'faculty') return openFaculty(params.get('id') || undefined, false, params.get('session')); if (params.get('view') === 'students' || params.get('view') === 'student') return openStudents(params.get('view') === 'student' ? params.get('id') : undefined, false); if (params.has('path')) return openReference(Object.fromEntries(params)); }).catch(e => notice(`Could not load your collection: ${e.message}`));

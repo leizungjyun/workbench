@@ -1,3 +1,5 @@
+import { FacultyStore } from './faculty.js';
+import { FacultyScheduling } from './faculty-scheduling.js';
 import { GroupStore } from './groups.js';
 import { GroupScheduling } from './group-scheduling.js';
 import { TimetableStore } from './timetables.js';
@@ -214,10 +216,11 @@ async function body(req) {
 export async function createApp(root, { now = Date.now, appRoot = path.dirname(fileURLToPath(import.meta.url)) } = {}) {
   const store = await new NotebookStore(root).init();
   const students = await new StudentStore(store).init();
+  const faculty = await new FacultyStore(store).init();
   const groups = await new GroupStore(store, students).init();
   const daily = await new DailyStore(store).init();
   const calendar = await new CalendarStore(store).init();
-  daily.calendar = calendar; daily.groups = groups;
+  daily.calendar = calendar; daily.groups = groups; daily.faculty = faculty;
   const timetables = await new TimetableStore(store).init(); students.timetables = timetables;
   const conversationCheck = async (event, draftEvents = [], proposed = false) => {
     validateCalendar({ schemaVersion: 1, id: randomUUID(), events: [event] });
@@ -229,6 +232,7 @@ export async function createApp(root, { now = Date.now, appRoot = path.dirname(f
     const result = checkConversation(event, student.document, academic.document, events, now());
     return { ...result, acknowledgement: digest(JSON.stringify([event, student.revision, academic.revision, current.revision, result.conflicts])) };
   };
+  const facultyScheduling = new FacultyScheduling({ faculty, calendar, now });
   const groupScheduling = new GroupScheduling({ groups, students, calendar, timetables, now });
   const kernels = new KernelService(store), terminals = new TerminalService(store);
   store.beforeTransfer = async (input, location) => {
@@ -252,6 +256,16 @@ export async function createApp(root, { now = Date.now, appRoot = path.dirname(f
       if (!['GET', 'HEAD'].includes(req.method)) {
         if (req.headers.origin !== `http://${req.headers.host}`) fail(403, 'Requests must originate from this app.');
         if (!/^\/api\/groups\/[a-f\d-]+\/attachments$/.test(route) && !(req.headers['content-type'] || '').startsWith('application/json')) fail(415, 'JSON required.');
+      }
+      if (req.method === 'GET' && route === '/api/faculty/export') return json(200, await store.serialize(() => faculty.export()));
+      if (req.method === 'GET' && route === '/api/faculty') return json(200, await store.serialize(() => faculty.list()));
+      if (req.method === 'POST' && route === '/api/faculty') { const input = await body(req); return json(201, await store.serialize(() => faculty.create(input))); }
+      const facultyRoute = route.match(/^\/api\/faculty\/([^/]+)(?:\/(check))?$/);
+      if (facultyRoute) {
+        const [, id, action] = facultyRoute;
+        if (!action && req.method === 'GET') return json(200, await store.serialize(() => faculty.read(id)));
+        if (!action && req.method === 'PUT') { const input = await body(req); return json(200, await store.serialize(() => faculty.save(id, input))); }
+        if (action === 'check' && req.method === 'POST') { const input = await body(req); return json(200, await store.serialize(() => facultyScheduling.check(id, input?.event, input?.draftEvents))); }
       }
       if (req.method === 'GET' && route === '/api/groups/export') return json(200, await store.serialize(() => groups.export()));
       if (req.method === 'GET' && route === '/api/groups') return json(200, await store.serialize(() => groups.list()));
@@ -293,6 +307,15 @@ export async function createApp(root, { now = Date.now, appRoot = path.dirname(f
           const next = input.document.events.find(e => e.id === previous.id);
           if (next && (next.groupId !== previous.groupId || next.groupSessionId !== previous.groupSessionId)) fail(400, 'A group booking cannot be detached from its session.');
         }
+        for (const previous of current.document.events.filter(e => e.facultyId)) {
+          const next = input.document.events.find(e => e.id === previous.id);
+          if (next && next.facultyId !== previous.facultyId) fail(400, 'A Faculty booking cannot be detached from its member.');
+        }
+        for (const event of input.document.events.filter(e => e.facultyId)) {
+          if (JSON.stringify(current.document.events.find(e => e.id === event.id)) === JSON.stringify(event)) continue;
+          const checked = await facultyScheduling.check(event.facultyId, event, input.document.events, true);
+          if (checked.conflicts.length && input.acknowledgements?.[event.id] !== checked.acknowledgement) fail(409, 'Faculty availability changed or needs confirmation. Review your Calendar conflicts and confirm this booking.');
+        }
         for (const event of input.document.events.filter(e => e.studentId)) {
           if (JSON.stringify(current.document.events.find(e => e.id === event.id)) === JSON.stringify(event)) continue;
           const checked = await conversationCheck(event, input.document.events, true);
@@ -332,8 +355,8 @@ export async function createApp(root, { now = Date.now, appRoot = path.dirname(f
       if (req.method === 'GET' && route === '/api/item') return json(200, await store.item({ scope: url.searchParams.get('scope') || 'active', id: url.searchParams.get('id'), path: url.searchParams.get('path') || '' }));
       if (req.method === 'GET' && route === '/api/search') {
         const query = url.searchParams.get('q') || '';
-        const [notebooks, dailyResults, studentResults, groupResults] = await Promise.all([store.search(query), store.serialize(() => daily.search(query)), store.serialize(() => students.search(query)), store.serialize(() => groups.search(query))]);
-        return json(200, { ...notebooks, daily: dailyResults, students: studentResults, groups: groupResults, occurrences: notebooks.occurrences + [...dailyResults, ...studentResults, ...groupResults].reduce((sum, item) => sum + item.count, 0) });
+        const [notebooks, dailyResults, studentResults, groupResults, facultyResults] = await Promise.all([store.search(query), store.serialize(() => daily.search(query)), store.serialize(() => students.search(query)), store.serialize(() => groups.search(query)), store.serialize(() => faculty.search(query))]);
+        return json(200, { ...notebooks, daily: dailyResults, students: studentResults, groups: groupResults, faculty: facultyResults, occurrences: notebooks.occurrences + [...dailyResults, ...studentResults, ...groupResults, ...facultyResults].reduce((sum, item) => sum + item.count, 0) });
       }
       if (req.method === 'GET' && route === '/api/terminals') return json(200, { sessions: terminals.list() });
       if (req.method === 'POST' && route === '/api/terminal') { const input = await body(req); return json(200, await store.serialize(() => terminals.start(input))); }
@@ -376,7 +399,7 @@ export async function createApp(root, { now = Date.now, appRoot = path.dirname(f
   });
   terminals.attach(server);
   server.on('close', () => { kernels.close(); terminals.close(); });
-  return { server, store, students, groups, daily, calendar, timetables, kernels, terminals };
+  return { server, store, students, groups, faculty, daily, calendar, timetables, kernels, terminals };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { server, kernels, terminals } = await createApp(workspacePath());

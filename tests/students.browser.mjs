@@ -11,6 +11,7 @@ test.beforeEach(async ({ page }) => {
   await fs.symlink(path.resolve('dist'), path.join(root, 'dist'));
   app = await createApp(root); await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${app.server.address().port}`; await page.goto(base); await page.getByRole('button', { name: 'Students', exact: true }).click();
+  await expect(page).toHaveURL(/view=students$/); await expect(page.locator('#students-workspace').getByRole('heading', { name: 'Students', exact: true })).toBeVisible();
 });
 test.afterEach(async ({ context }) => { for (const page of context.pages()) await page.close(); await app.terminals.close(); await app.kernels.close(); app.server.closeAllConnections(); await new Promise(resolve => app.server.close(resolve)); await fs.rm(root, { recursive: true, force: true }); });
 const work = page => page.locator('#students-workspace');
