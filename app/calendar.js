@@ -1,3 +1,4 @@
+import { sourceRecordLink } from './record-links.js';
 import { SchedulingConflicts, participantAvailability } from './scheduling-conflicts.js';
 import { classesOnDate } from '../timetable-model.js';
 import './timetables.css';
@@ -8,8 +9,8 @@ const el = (tag, text = '', cls = '') => { const n = document.createElement(tag)
 const clone = value => structuredClone(value);
 function download(value, name) { const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); const a = el('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 export class CalendarWorkspace {
-  constructor({ parent, api, notice, prepare, enter, navigate, reminders }) {
-    Object.assign(this, { parent, api, notice, prepare, enter, navigate, reminders });
+  constructor({ parent, api, notice, prepare, enter, navigate, reminders, icon }) {
+    Object.assign(this, { parent, api, notice, prepare, enter, navigate, reminders, icon });
     window.addEventListener('pagehide', () => { this.cache(); this.release(); });
     window.addEventListener('pageshow', e => { if (e.persisted && this.data) this.claim(); });
     window.addEventListener('focus', () => this.checkExternal());
@@ -160,13 +161,13 @@ export class CalendarWorkspace {
     row.append(el('h3', event.title));
     if (row.classList.contains('completed')) row.append(el('span', 'Completed in Daily', 'calendar-completed-label'));
     row.append(el('p', new Date(event.start).toLocaleString()));
-    if (event.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${event.groupId}&session=${event.groupSessionId}`; link.onclick = async e => { if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();if(await this.flush())location.href=link.href; }; row.append(link); }
-    if (event.facultyId) { const link = el('a', 'Open faculty member'); link.href = `?view=faculty&id=${event.facultyId}`; link.onclick = async e => { if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();if(await this.flush())location.href=link.href; }; row.append(link); }
     if (event.studentId) row.append(el('p', `Student: ${this.students?.find(s => s.id === event.studentId)?.profile.name || 'Unavailable student'}`));
     if (event.location) row.append(el('p', event.location));
     const end = eventEnd(event);
     if (end) row.append(el('p', `Ends ${new Date(end).toLocaleString()}`));
-    const actions = el('div', '', 'calendar-actions'); actions.append(this.button('Edit event', () => this.edit(event), true), this.button('Delete event', async () => {
+    const actions = el('div', '', 'calendar-actions');
+    const source = sourceRecordLink(event, { icon: this.icon, flush: () => this.flush(), notice: this.notice }); if (source) actions.append(source);
+    actions.append(this.button('Edit event', () => this.edit(event), true), this.button('Delete event', async () => {
       if (!confirm(`Delete “${event.title}”?`)) return; this.data.events = this.data.events.filter(e => e.id !== event.id); this.cache(); await this.save(); this.render();
     }, true)); row.append(actions); return row;
   }

@@ -45,7 +45,7 @@ For an existing legacy workspace, with its server stopped, `node scripts/organiz
 
 ## Daily, Calendar, and Students
 
-Daily task rows use a chevron for Details and a trash icon for Remove. Expanded details have a sage background and distinct Task settings, Timing, Task notes, Subtasks, and Task history blocks. Remove replaces cancellation in Details; Undo and reopening remain available. Optional Deadline and Reschedule pickers start in the current local month when empty, or the selected month for existing dates. Browsing months and closing do not assign a date; Today selects today, Clear unsets it, and Reschedule applies the staged date.
+Daily task rows use a chevron for Details and a trash icon for Remove. Linked Student, Faculty, and Group records have person/group icons and a calendar shortcut beneath their metadata, also available in Day preview. Calendar event actions provide the same source-record icons. Calendar shortcuts open the current booking even from an older Daily record. Expanded details have a sage background and distinct Task settings, Timing, Task notes, Subtasks, and Task history blocks. Remove replaces cancellation in Details; Undo and reopening remain available. Optional Deadline and Reschedule pickers start in the current local month when empty, or the selected month for existing dates. Browsing months and closing do not assign a date; Today selects today, Clear unsets it, and Reschedule applies the staged date.
 
 Daily keeps dated task histories, subtasks, categories, notes, and completion states. **Import from Markdown** selects a source note and inclusive date range, previews changes, and applies them with source/Daily revision checks. Repeated imports do not duplicate dates. Import preferences are stored privately.
 

@@ -1,3 +1,5 @@
+import { recordIconLink, sourceRecordLink } from './record-links.js';
+import { localInput } from '../calendar-model.js';
 import { blockingCalendarEvents } from '../daily-calendar.js';
 import { checkConversation } from '../timetable-model.js';
 import { localDate, shiftDate, validDate, newTask, updateTask, visibleTasks, stateAt, validateDaily, normalizeDaily } from '../daily-model.js';
@@ -74,11 +76,12 @@ export class DailyWorkspace {
     if (!this.data || this.parent.inert || this.checking || this.saving || this.parent.querySelector('dialog[open]')) return;
     this.checking = true; const observed = this.data;
     try {
-      const latest = await this.api('/api/daily'); if (this.data !== observed || this.saving) return;
+      const [latest, calendar] = await Promise.all([this.api('/api/daily'), this.api('/api/calendar')]); if (this.data !== observed || this.saving) return;
+      const calendarChanged = JSON.stringify(this.calendar) !== JSON.stringify(calendar.document); this.calendar = calendar.document;
       if (latest.revision !== this.revision) {
         if (this.dirty) { clearTimeout(this.timer); this.blocked = this.conflict = true; this.cache(); this.updateStatus(); }
         else { this.load(latest); this.render(); }
-      }
+      } else if (calendarChanged && !this.dirty) this.render();
       if (this.followToday && this.date !== localDate() && await this.flush()) { this.date = localDate(); this.focusId = null; history.replaceState(null, '', this.url); this.render(); }
     } catch (e) { this.notice(e.message); } finally { this.checking = false; }
   }
@@ -171,15 +174,22 @@ export class DailyWorkspace {
         const title = el('p', '', 'daily-preview-title'); title.append(el('span', state.status === 'completed' ? '✓ ' : '○ '), el('span', state.text)); item.append(title);
         const metadata = [state.time, state.deadline && `Due ${state.deadline}`, state.scheduledDate > this.date && `Scheduled ${state.scheduledDate}`, task.originDate < this.date && `From ${task.originDate}`, state.studentId && (this.roster.find(student => student.id === state.studentId)?.name || 'Linked student')].filter(Boolean);
         if (metadata.length) item.append(el('p', metadata.join(' · '), 'daily-muted'));
+        const navigation = this.recordActions(task, state); if (navigation) item.append(navigation);
         if (state.details) { const rich = el('div', '', 'daily-preview-rich'); renderMarkdown(rich, state.details); item.append(rich); }
         for (const subtask of state.subtasks) item.append(el('p', `${subtask.done ? '✓' : '○'} ${subtask.text}`, 'daily-preview-subtask'));
-        if (state.facultyId) { const link = el('a', 'Open faculty member'); link.href = `?view=faculty&id=${state.facultyId}`; item.append(link); }
-        if (state.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${state.groupId}&session=${state.groupSessionId}`; item.append(link); }
         section.append(item);
       }
       this.dayPreview.append(section);
     }
     if (!rows.length) this.dayPreview.append(el('p', 'No tasks for this day.', 'daily-muted'));
+  }
+  recordActions(task, state) {
+    const options = { icon: this.icon, flush: () => this.flush(), notice: this.notice };
+    const source = sourceRecordLink(state, options); if (!source) return null;
+    const actions = el('div', '', 'record-navigation'); actions.append(source);
+    const booking = task.calendarEvent && !task.calendarEvent.deleted && this.calendar?.events.find(event => event.id === task.id);
+    if (booking) actions.append(recordIconLink({ ...options, label: 'Reschedule in Calendar', glyph: 'calendar', href: `?view=calendar&date=${localInput(booking.start).slice(0, 10)}&event=${booking.id}` }));
+    return actions;
   }
   taskRow({ task, state }) {
     const expanded = this.expanded.has(task.id);
@@ -194,8 +204,7 @@ export class DailyWorkspace {
     top.append(checkbox, title, toggle, remove); row.append(top);
     const latest = task.versions.at(-1); const meta = el('div', '', 'daily-muted');
     meta.textContent = `${task.originDate < this.date ? `From ${task.originDate} · ` : ''}${state.status}${state.scheduledDate > this.date ? ` · Scheduled ${state.scheduledDate}` : ''}${state.time ? ` · ${state.time}` : ''}${state.deadline ? ` · Due ${state.deadline}` : ''}${latest.date > this.date ? ` · Later ${latest.status} on ${latest.date}` : ''}`; row.append(meta);
-    if (state.facultyId) { const link = el('a', 'Open faculty member'); link.href = `?view=faculty&id=${state.facultyId}`; link.onclick = async e => { if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();if(await this.flush())location.href=link.href; }; row.append(link); const booking = this.calendar?.events.find(e => e.id === task.id); if(booking) { const reschedule = el('a', 'Reschedule in Calendar'); reschedule.href = `?view=calendar&date=${state.scheduledDate}&event=${booking.id}`; reschedule.onclick = async e => {e.preventDefault();if(await this.flush())location.href=reschedule.href;};row.append(reschedule); } }
-    if (state.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${state.groupId}&session=${state.groupSessionId}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; row.append(link); }
+    const navigation = this.recordActions(task, state); if (navigation) row.append(navigation);
     const event = this.calendar?.events.find(e => e.id === task.id && e.studentId);
     if (event) {
       const student = this.studentDocuments.find(s => s.id === event.studentId);
@@ -203,7 +212,6 @@ export class DailyWorkspace {
         if (checked.incomplete) row.append(el('p', 'Conversation availability incomplete', 'timetable-warning'));
         for (const conflict of checked.conflicts) row.append(el('p', `Conversation conflict: ${conflict.title}`, 'timetable-warning'));
       } else row.append(el('p', 'Conversation student unavailable', 'timetable-warning'));
-      const link = el('a', 'Reschedule in Calendar'); link.href = `?view=calendar&date=${state.scheduledDate}&event=${event.id}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; row.append(link);
     }
     if (this.expanded.has(task.id)) {
       const details = el('div', '', 'daily-task-details'); details.id = `daily-details-${task.id}`;
@@ -214,7 +222,6 @@ export class DailyWorkspace {
       if (state.facultyId) fields.querySelector('[aria-label="Student"]').closest('label').remove();
       else if (task.calendarEvent) { fields.querySelector('[aria-label="Student"]').disabled = true; settings.append(el('p', 'Change this task’s student in Calendar.', 'daily-muted')); }
       settings.append(fields);
-      if (state.studentId) { const link = el('a', 'Open student'); link.href = `?view=student&id=${state.studentId}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; settings.append(link); }
       const timing = block('Timing');
       const time = this.field('Time', state.time, value => this.patch(task, { time: value }), 'time');
       if (task.calendarEvent) time.querySelector('input').disabled = true;

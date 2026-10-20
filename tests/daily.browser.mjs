@@ -25,7 +25,7 @@ test('tasks, formatting, optional details, student link, notes, and exports surv
   await expect(work(page).locator('.daily-group h2')).toHaveText(['Learning', 'Students', 'Projects', 'Papers', 'Development', 'Miscellaneous']);
   await page.getByLabel('Add task to Learning', { exact: true }).press('Enter'); expect((await disk()).tasks).toHaveLength(0);
   await add(page, 'needle research'); await page.getByRole('button', { name: 'Details', exact: true }).click();
-  await page.getByLabel('Time', { exact: true }).fill('17:10'); await page.getByLabel('Deadline', { exact: true }).fill('2026-10-15'); await page.getByLabel('Student', { exact: true }).selectOption(student.document.id); await expect(page.getByRole('link', { name: 'Open student', exact: true })).toBeVisible();
+  await page.getByLabel('Time', { exact: true }).fill('17:10'); await page.getByLabel('Deadline', { exact: true }).fill('2026-10-15'); await page.getByLabel('Student', { exact: true }).selectOption(student.document.id); await expect(work(page).locator('.daily-task').getByRole('link', { name: 'Open student', exact: true })).toBeVisible();
   await rich(page, 'Task notes', '中文 needle https://example.com'); const notes = page.getByLabel('Task notes', { exact: true }); await notes.selectText(); await page.getByRole('toolbar', { name: 'Task notes formatting' }).getByRole('button', { name: 'Bold', exact: true }).click();
   await page.getByLabel('Add subtask', { exact: true }).fill('Run baseline'); await page.getByLabel('Add subtask', { exact: true }).press('Enter'); await page.getByLabel('Complete subtask Run baseline', { exact: true }).check();
   await rich(page, 'Daily notes', 'Reflection needle'); await page.keyboard.press('ControlOrMeta+s'); await saved(page);

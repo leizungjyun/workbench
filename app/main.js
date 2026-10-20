@@ -42,6 +42,8 @@ const icons = {
  unarchive:'<path d="M3 4h18v4H3zM5 8v13h14V8M12 18v-7m-3 3 3-3 3 3"/>',
  purge:'<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M9 11l6 6m0-6-6 6"/>',
  terminal:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m6 8 4 4-4 4m7 0h5"/>',
+ person:'<circle cx="12" cy="7" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
+ people:'<circle cx="9" cy="7" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M17 3a4 4 0 0 1 0 8M19 14a6 6 0 0 1 3 5v2"/>',
  calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>',
  chevronDown:'<path d="m5 9 7 7 7-7"/>',
  chevron:'<path d="m9 5 7 7-7 7"/>'
@@ -150,7 +152,7 @@ async function openDaily(date, task, push = true) {
 }
 $('daily-launch').onclick = () => openDaily();
 const calendarReminders = new CalendarReminders({ api, parent: $('calendar-reminders'), notice });
-const calendar = new CalendarWorkspace({ parent: $('calendar-workspace'), api, notice, prepare: flush, navigate: date => openCalendar(date), reminders: calendarReminders, enter: async () => {
+const calendar = new CalendarWorkspace({ parent: $('calendar-workspace'), api, notice, prepare: flush, navigate: date => openCalendar(date), reminders: calendarReminders, icon, enter: async () => {
   tabs.release(); clearTimeout(saveTimer); clearTimeout(previewTimer); current = null; savedContent = '';
   setScreen('calendar-workspace'); renderSidebar();
 } });
