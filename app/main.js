@@ -41,6 +41,7 @@ const icons = {
  unarchive:'<path d="M3 4h18v4H3zM5 8v13h14V8M12 18v-7m-3 3 3-3 3 3"/>',
  purge:'<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M9 11l6 6m0-6-6 6"/>',
  terminal:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m6 8 4 4-4 4m7 0h5"/>',
+ calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>',
  chevronDown:'<path d="m5 9 7 7 7-7"/>',
  chevron:'<path d="m9 5 7 7-7 7"/>'
 };
@@ -125,7 +126,7 @@ async function openGroups(id, push = true, sessionId) {
   try { return await groups.open(id, push, sessionId); } finally { navigating = false; }
 }
 $('groups-launch').onclick = () => openGroups();
-const daily = new DailyWorkspace({ parent: $('daily-workspace'), api, notice, prepare: flush, navigate: (date, task) => openDaily(date, task), enter: async () => {
+const daily = new DailyWorkspace({ icon, parent: $('daily-workspace'), api, notice, prepare: flush, navigate: (date, task) => openDaily(date, task), enter: async () => {
   tabs.release(); clearTimeout(saveTimer); clearTimeout(previewTimer); current = null; savedContent = '';
   setScreen('daily-workspace'); renderSidebar();
 } });

@@ -2,13 +2,14 @@ import { checkConversation } from '../timetable-model.js';
 import { localDate, shiftDate, validDate, newTask, updateTask, visibleTasks, stateAt, validateDaily, normalizeDaily } from '../daily-model.js';
 import { renderMarkdown } from './render.js';
 import './daily.css';
+import { dailyDateField } from './daily-date.js';
 import { DailyCardLayout } from './daily-layout.js';
 const el = (tag, text = '', cls = '') => { const n = document.createElement(tag); n.textContent = text; n.className = cls; return n; };
 const clone = value => structuredClone(value);
 function download(value, name, plain = false) { const url = URL.createObjectURL(new Blob([plain ? value : JSON.stringify(value, null, 2)], { type: plain ? 'text/markdown' : 'application/json' })); const a = el('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 export class DailyWorkspace {
-  constructor({ parent, api, notice, prepare, enter, navigate }) {
-    Object.assign(this, { parent, api, notice, prepare, enter, navigate }); this.expanded = new Set();
+  constructor({ parent, api, notice, prepare, enter, navigate, icon }) {
+    Object.assign(this, { parent, api, notice, prepare, enter, navigate, icon }); this.expanded = new Set();
     window.addEventListener('pagehide', () => { this.cache(); this.release(); });
     window.addEventListener('pageshow', e => { if (e.persisted && this.data) this.claim(); });
     window.addEventListener('focus', () => this.checkExternal());
@@ -179,9 +180,16 @@ export class DailyWorkspace {
     if (!rows.length) this.dayPreview.append(el('p', 'No tasks for this day.', 'daily-muted'));
   }
   taskRow({ task, state }) {
-    const row = el('article', '', `daily-task ${state.status}`); row.dataset.task = task.id;
+    const expanded = this.expanded.has(task.id);
+    const row = el('article', '', `daily-task ${state.status}${expanded ? ' daily-task-expanded' : ''}`); row.dataset.task = task.id;
     const top = el('div', '', 'daily-task-line'); const checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.checked = state.status === 'completed'; checkbox.disabled = this.readOnly; checkbox.setAttribute('aria-label', `Complete ${state.text}`); checkbox.onchange = () => this.transition(task, { status: checkbox.checked ? 'completed' : 'open', scheduledDate: this.date });
-    const title = this.field('Task', state.text, value => { if (value.trim()) { this.patch(task, { text: value }); checkbox.setAttribute('aria-label', `Complete ${value}`); } }); title.classList.add('daily-task-title'); top.append(checkbox, title, this.button(this.expanded.has(task.id) ? 'Hide details' : 'Details', () => { if (this.expanded.has(task.id)) this.expanded.delete(task.id); else this.expanded.add(task.id); this.render(); }), this.button('Remove', () => this.transition(task, { status: 'cancelled', scheduledDate: this.date }), true)); row.append(top);
+    const title = this.field('Task', state.text, value => { if (value.trim()) { this.patch(task, { text: value }); checkbox.setAttribute('aria-label', `Complete ${value}`); } }); title.classList.add('daily-task-title'); const toggle = this.button(expanded ? 'Hide details' : 'Details', () => { if (expanded) this.expanded.delete(task.id); else this.expanded.add(task.id); this.render(); const next = [...this.parent.querySelectorAll('[data-task]')].find(n => n.dataset.task === task.id); next?.querySelector('.daily-details-toggle')?.focus(); });
+    const remove = this.button('Remove', () => this.transition(task, { status: 'cancelled', scheduledDate: this.date }), true);
+    for (const [button, glyph, cls] of [[toggle, 'chevronDown', 'daily-details-toggle'], [remove, 'trash', 'daily-remove']]) {
+      button.title = button.textContent; button.setAttribute('aria-label', button.textContent); button.replaceChildren(this.icon(glyph)); button.className = `daily-icon-button ${cls}`;
+    }
+    toggle.setAttribute('aria-expanded', String(expanded)); toggle.setAttribute('aria-controls', `daily-details-${task.id}`);
+    top.append(checkbox, title, toggle, remove); row.append(top);
     const latest = task.versions.at(-1); const meta = el('div', '', 'daily-muted');
     meta.textContent = `${task.originDate < this.date ? `From ${task.originDate} · ` : ''}${state.status}${state.scheduledDate > this.date ? ` · Scheduled ${state.scheduledDate}` : ''}${state.time ? ` · ${state.time}` : ''}${state.deadline ? ` · Due ${state.deadline}` : ''}${latest.date > this.date ? ` · Later ${latest.status} on ${latest.date}` : ''}`; row.append(meta);
     if (state.groupId) { const link = el('a', 'Open group session'); link.href = `?view=group&id=${state.groupId}&session=${state.groupSessionId}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; row.append(link); }
@@ -195,25 +203,38 @@ export class DailyWorkspace {
       const link = el('a', 'Reschedule in Calendar'); link.href = `?view=calendar&date=${state.scheduledDate}&event=${event.id}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; row.append(link);
     }
     if (this.expanded.has(task.id)) {
-      const details = el('div', '', 'daily-task-details'); const fields = el('div', '', 'daily-fields');
-      fields.append(this.select('Category', state.categoryId, this.data.categories.map(c => [c.id, c.name]), value => { this.patch(task, { categoryId: value }); this.render(); }), this.field('Time', state.time, value => this.patch(task, { time: value }), 'time'), this.field('Deadline', state.deadline, value => this.patch(task, { deadline: value }), 'date'), this.select('Student', state.studentId, [['', 'No student'], ...this.roster.map(s => [s.id, s.name]), ...(!this.roster.some(s => s.id === state.studentId) && state.studentId ? [[state.studentId, 'Unavailable student']] : [])], value => { this.patch(task, { studentId: value }); this.render(); }));
-      if (task.calendarEvent) { for (const label of ['Time', 'Student']) fields.querySelector(`[aria-label="${label}"]`).disabled = true; }
-      details.append(fields, el('p', task.calendarEvent ? 'This task follows Calendar. Change its time and student in Calendar.' : 'Task times stay in Daily; they do not create Calendar events or reminders.', 'daily-muted')); if (state.studentId) { const link = el('a', 'Open student'); link.href = `?view=student&id=${state.studentId}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; details.append(link); }
+      const details = el('div', '', 'daily-task-details'); details.id = `daily-details-${task.id}`;
+      details.append(el('h3', 'Task details', 'daily-details-heading'));
+      const block = name => { const section = el('section', '', 'daily-detail-block'); section.setAttribute('aria-label', name); section.append(el('h3', name)); return section; };
+      const settings = block('Task settings'), fields = el('div', '', 'daily-fields');
+      fields.append(this.select('Category', state.categoryId, this.data.categories.map(c => [c.id, c.name]), value => { this.patch(task, { categoryId: value }); this.render(); }), this.select('Student', state.studentId, [['', 'No student'], ...this.roster.map(s => [s.id, s.name]), ...(!this.roster.some(s => s.id === state.studentId) && state.studentId ? [[state.studentId, 'Unavailable student']] : [])], value => { this.patch(task, { studentId: value }); this.render(); }));
+      if (task.calendarEvent) { fields.querySelector('[aria-label="Student"]').disabled = true; settings.append(el('p', 'Change this task’s student in Calendar.', 'daily-muted')); }
+      settings.append(fields);
+      if (state.studentId) { const link = el('a', 'Open student'); link.href = `?view=student&id=${state.studentId}`; link.onclick = async e => { e.preventDefault(); if (await this.flush()) location.href = link.href; }; settings.append(link); }
+      const timing = block('Timing');
+      const time = this.field('Time', state.time, value => this.patch(task, { time: value }), 'time');
+      if (task.calendarEvent) time.querySelector('input').disabled = true;
+      const dateField = (label, value, change) => dailyDateField({ label, value, change, disabled: this.readOnly, icon: this.icon });
+      const deadline = dateField('Deadline', state.deadline, value => this.patch(task, { deadline: value }));
+      let scheduled = '';
+      const schedule = dateField('Reschedule to', '', value => { scheduled = value; });
+      timing.append(time, el('p', task.calendarEvent ? 'This task follows Calendar. Change its time in Calendar.' : 'Task times stay in Daily; they do not create Calendar events or reminders.', 'daily-muted'), deadline, schedule, this.button('Reschedule', () => { if (!validDate(scheduled) || scheduled < this.date) throw new Error('Choose this day or a later date.'); this.transition(task, { scheduledDate: scheduled, status: 'open' }); }, true));
+      details.append(settings, timing);
       details.append(this.formatted('Task notes', state.details, value => this.patch(task, { details: value })));
-      const subs = el('div'); subs.append(el('h3', 'Subtasks'));
+      const subs = block('Subtasks'); const progress = el('p', `${state.subtasks.filter(s => s.done).length} / ${state.subtasks.length} completed`, 'daily-muted'); subs.append(progress);
       for (const sub of state.subtasks) {
         const line = el('div', '', 'daily-subtask'); const box = el('input'); box.type = 'checkbox'; box.checked = sub.done; box.disabled = this.readOnly; box.setAttribute('aria-label', `Complete subtask ${sub.text}`);
         const change = patch => { const current = task.versions.filter(v => v.date <= this.date).at(-1); this.patch(task, { subtasks: current.subtasks.map(s => s.id === sub.id ? { ...s, ...patch } : s) }); };
-        box.onchange = () => change({ done: box.checked }); line.append(box, this.field('Subtask', sub.text, value => { if (value.trim()) change({ text: value }); })); subs.append(line);
+        box.onchange = () => { change({ done: box.checked }); const current = stateAt(task, this.date); progress.textContent = `${current.subtasks.filter(s => s.done).length} / ${current.subtasks.length} completed`; }; line.append(box, this.field('Subtask', sub.text, value => { if (value.trim()) change({ text: value }); })); subs.append(line);
       }
       const add = el('input', '', 'daily-add'); add.placeholder = 'Add a subtask…'; add.setAttribute('aria-label', 'Add subtask'); add.disabled = this.readOnly;
       add.onkeydown = e => { if (e.key === 'Enter' && add.value.trim()) { e.preventDefault(); const current = task.versions.filter(v => v.date <= this.date).at(-1); this.patch(task, { subtasks: [...current.subtasks, { id: crypto.randomUUID(), text: add.value.trim(), done: false }] }); this.render(); } }; subs.append(add); details.append(subs);
-      const actions = el('div', '', 'daily-actions'); let scheduled = '';
-      const schedule = this.field('Reschedule to', '', value => { scheduled = value; }, 'date'); actions.append(schedule, this.button('Reschedule', () => { if (!validDate(scheduled) || scheduled < this.date) throw new Error('Choose this day or a later date.'); this.transition(task, { scheduledDate: scheduled, status: 'open' }); }, true), this.button(state.status === 'cancelled' ? 'Reopen task' : 'Cancel task', () => this.transition(task, { status: state.status === 'cancelled' ? 'open' : 'cancelled', scheduledDate: this.date }), true));
-      if (state.status === 'completed') actions.append(this.button('Reopen task', () => this.transition(task, { status: 'open', scheduledDate: this.date }), true));
-      const history = el('details'); history.append(el('summary', 'Task history'));
+      const actions = el('div', '', 'daily-actions');
+      if (state.status !== 'open') actions.append(this.button('Reopen task', () => this.transition(task, { status: 'open', scheduledDate: this.date }), true));
+      const history = el('details', '', 'daily-detail-block daily-task-history'); history.append(el('summary', 'Task history'));
       for (const v of task.versions) { const link = el('a', `${v.date} · ${v.status}${v.scheduledDate > v.date ? ` · Scheduled ${v.scheduledDate}` : ''}`); link.href = `?view=daily&date=${v.date}&task=${task.id}`; link.onclick = e => { e.preventDefault(); this.navigate(v.date, task.id); }; history.append(link); }
-      details.append(actions, history); row.append(details);
+      if (actions.childElementCount) details.append(actions);
+      details.append(history); row.append(details);
     }
     return row;
   }

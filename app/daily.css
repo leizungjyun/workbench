@@ -40,3 +40,26 @@
 .daily-preview-subtask {font-size:12px;padding-left:14px;margin:6px 0;}.daily-task-line > button {padding:6px;}
 @media(max-width:1100px) {.daily-layout {grid-template-columns:1fr;}.daily-editor {grid-column:auto;}.daily-day-preview {position:static;max-height:none;}.daily-groups {grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:700px) {.daily-groups {--daily-columns:1;grid-template-columns:1fr;}}
+
+.daily-task.daily-task-expanded {background:#eaf0e4;border:1px solid #bdcdb5;border-left:3px solid #51755a;border-radius:9px;padding:12px 8px;margin:10px 0;}
+.daily-workspace .daily-icon-button {display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;padding:6px;border-color:transparent;background:transparent;}
+.daily-icon-button .icon {display:block;width:18px;height:18px;}.daily-icon-button svg {display:block;width:100%;height:100%;}
+.daily-details-toggle[aria-expanded=true] {background:#d5e2cc;border-color:#a8be9d;}.daily-details-toggle[aria-expanded=true] .icon {transform:rotate(180deg);}
+.daily-workspace .daily-remove:hover {color:#a15343;background:#f8e9e5;border-color:#e5c6bf;}
+.daily-task-details {display:flex;flex-direction:column;gap:12px;margin-top:14px;}
+.daily-task-details .daily-details-heading {margin:0 2px;font-size:12px;letter-spacing:.04em;color:#365743;}
+.daily-detail-block,.daily-task-details > .daily-formatted {background:#fffef9;border:1px solid #d3ddcc;border-radius:8px;padding:12px;margin:0;min-width:0;}
+.daily-detail-block > h3 {margin:0 0 12px;font-size:13px;color:#365743;}.daily-detail-block .daily-fields {grid-template-columns:1fr;}
+.daily-detail-block > .daily-field {margin:12px 0;}.daily-detail-block > button {margin-top:4px;}
+.daily-task-details .daily-task-history {margin:0;}.daily-task-history summary {font-weight:600;color:#365743;cursor:pointer;}
+.daily-date-controls {display:flex;gap:6px;align-items:center;}.daily-date-controls input {width:100%;flex:1;min-width:0;}
+.daily-date-controls input::-webkit-calendar-picker-indicator {display:none;}
+.daily-date-controls > button {display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:7px;flex-shrink:0;}
+.daily-date-controls .icon,.daily-date-controls svg {display:block;width:18px;height:18px;}
+.daily-date-picker {background:#f1f5ec;border:1px solid #c4d2b9;border-radius:8px;padding:8px;margin-top:4px;}
+.daily-date-heading {display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:8px;}.daily-date-heading strong {font-size:12px;text-align:center;}
+.daily-date-grid {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin-bottom:10px;}
+.daily-date-grid > button {font-size:11px;padding:4px 0;min-height:30px;}.daily-date-weekday {text-align:center;font-size:10px;color:#6a776b;padding:4px 0;}
+.daily-date-grid button[aria-pressed=true] {background:#365743;color:white;border-color:#365743;}.daily-date-grid button[aria-current=date] {box-shadow:inset 0 0 0 1px #51755a;}
+.daily-date-picker .daily-actions {gap:6px;}.daily-date-picker .daily-actions button {font-size:11px;padding:6px;}
+@media(max-width:600px) {.daily-workspace .daily-icon-button {width:40px;height:40px;}}

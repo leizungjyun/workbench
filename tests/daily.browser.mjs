@@ -43,7 +43,7 @@ test('carry-forward preserves history; completion, reopening, scheduling, cancel
   await date(page, '2026-10-16'); await expect(work(page).locator('.daily-task')).toHaveCount(0); await page.getByText('Finished tasks (1)', { exact: true }).click(); await page.getByRole('button', { name: 'Reopen today', exact: true }).click(); await saved(page); expect((await disk()).tasks[0].id).toBe(id);
   await page.getByRole('button', { name: 'Details', exact: true }).click(); await page.getByLabel('Reschedule to', { exact: true }).fill('2026-10-20'); await page.getByRole('button', { name: 'Reschedule', exact: true }).click(); await saved(page);
   await date(page, '2026-10-19'); await expect(work(page).locator('.daily-task')).toHaveCount(0); await date(page, '2026-10-20'); await expect(work(page).locator('.daily-task')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Details', exact: true }).click(); await page.getByRole('button', { name: 'Cancel task', exact: true }).click(); await expect(work(page).locator('.daily-task')).toHaveCount(0); await page.getByRole('button', { name: 'Undo task change', exact: true }).click(); await expect(work(page).locator('.daily-task')).toHaveClass(/open/); await saved(page);
+  await page.getByRole('button', { name: 'Details', exact: true }).click(); await page.getByRole('button', { name: 'Remove', exact: true }).click(); await expect(work(page).locator('.daily-task')).toHaveCount(0); await page.getByRole('button', { name: 'Undo task change', exact: true }).click(); await expect(work(page).locator('.daily-task')).toHaveClass(/open/); await saved(page);
 });
 
 test('category edits, hiding, ordering and adding preserve tasks', async ({ page }) => {
@@ -248,4 +248,60 @@ test('completed tasks move to the end of their category, with stable groups, reo
   await date(page, '2026-10-10'); expect(await order()).toEqual(['Second task']);
   await expect(page.getByLabel('Task', { exact: true })).toHaveCount(2);
   await date(page, '2026-10-09'); expect(await order()).toEqual(['Second task', 'First task', 'Third task']);
+});
+
+test('task icon actions expose clear, distinct details blocks and preserve removal and reopening', async ({ page, context }) => {
+  await add(page, 'Detailed task'); await saved(page);
+  const row = work(page).locator('.daily-task').first(); const toggle = row.getByRole('button', { name: 'Details', exact: true });
+  await expect(toggle).toHaveAttribute('title', 'Details'); await expect(toggle).toHaveAttribute('aria-expanded', 'false'); await expect(toggle.locator('svg')).toHaveCount(1); await expect(toggle).toHaveText('');
+  await expect(row.getByRole('button', { name: 'Remove', exact: true }).locator('svg')).toHaveCount(1);
+  await toggle.focus(); await page.keyboard.press('Enter');
+  const hide = row.getByRole('button', { name: 'Hide details', exact: true }); await expect(hide).toBeFocused(); await expect(hide).toHaveAttribute('aria-expanded', 'true');
+  const details = row.locator('.daily-task-details'); await expect(details).toHaveAttribute('id', await hide.getAttribute('aria-controls'));
+  for (const name of ['Task settings', 'Timing', 'Task notes', 'Subtasks', 'Task history']) await expect(details.getByText(name, { exact: true })).toBeVisible();
+  await expect(details.getByRole('button', { name: 'Cancel task', exact: true })).toHaveCount(0);
+  expect(await row.evaluate(n => getComputedStyle(n).backgroundColor)).not.toBe(await row.locator('.daily-detail-block').first().evaluate(n => getComputedStyle(n).backgroundColor));
+  await row.getByLabel('Add subtask', { exact: true }).fill('Preparation'); await row.getByLabel('Add subtask', { exact: true }).press('Enter');
+  await row.getByLabel('Complete subtask Preparation', { exact: true }).check(); await expect(details.getByRole('region', { name: 'Subtasks', exact: true })).toContainText('1 / 1 completed');
+  await page.setViewportSize({ width: 1440, height: 1800 }); await row.scrollIntoViewIfNeeded();
+  await row.screenshot({ path: '/tmp/workbench-details-redesign.png' });
+  await page.setViewportSize({ width: 390, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect.poll(() => page.locator('#sidebar').evaluate(n => n.getBoundingClientRect().right)).toBeLessThan(1);
+  await row.screenshot({ path: '/tmp/workbench-details-mobile.png' });
+  await saved(page); const second = await context.newPage(); await second.goto(page.url()); await expect(work(second).getByRole('status')).toContainText('Read-only');
+  await work(second).getByRole('button', { name: 'Details', exact: true }).click(); await expect(work(second).getByRole('button', { name: 'Remove', exact: true })).toBeDisabled(); await expect(second.getByRole('button', { name: 'Choose deadline', exact: true })).toBeDisabled(); await second.close();
+  await row.getByRole('button', { name: 'Remove', exact: true }).click(); await expect(work(page).locator('.daily-task')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo task change', exact: true }).click(); await row.getByRole('checkbox', { name: 'Complete Detailed task', exact: true }).check();
+  await expect(row.getByRole('button', { name: 'Reopen task', exact: true })).toHaveCount(1);
+});
+
+test('date pickers default to the current local month without saving, and support choosing, clearing and staged rescheduling', async ({ page }) => {
+  await page.clock.install({ time: new Date('2027-01-15T12:00:00') });
+  await add(page, 'Dates are optional'); await page.clock.runFor(1000); await saved(page);
+  const before = await app.daily.read(); await page.getByRole('button', { name: 'Details', exact: true }).click();
+  const deadline = page.getByLabel('Deadline', { exact: true }), schedule = page.getByLabel('Reschedule to', { exact: true });
+  await expect(deadline).toHaveValue(''); await expect(schedule).toHaveValue('');
+  await page.getByRole('button', { name: 'Choose deadline', exact: true }).click(); const picker = page.getByRole('region', { name: 'Deadline calendar', exact: true });
+  await expect(picker).toContainText('January 2027'); await picker.getByRole('button', { name: 'Previous month', exact: true }).click(); await expect(picker).toContainText('December 2026');
+  await page.keyboard.press('Escape'); await expect(picker).toBeHidden(); await page.clock.runFor(1000); expect((await app.daily.read()).revision).toBe(before.revision);
+  await page.getByRole('button', { name: 'Choose deadline', exact: true }).click(); await expect(picker).toContainText('January 2027');
+  await picker.getByRole('button', { name: '2027-01-20', exact: true }).click(); await expect(deadline).toHaveValue('2027-01-20'); await page.clock.runFor(1000); await saved(page);
+  expect((await disk()).tasks[0].versions.at(-1).deadline).toBe('2027-01-20');
+  await deadline.fill('2026-12-21'); await page.getByRole('button', { name: 'Choose deadline', exact: true }).click(); await expect(picker).toContainText('December 2026');
+  await picker.getByRole('button', { name: 'Next month', exact: true }).click(); await expect(picker).toContainText('January 2027'); await picker.getByRole('button', { name: 'Clear', exact: true }).click(); await expect(deadline).toHaveValue('');
+  await page.getByRole('button', { name: 'Choose deadline', exact: true }).click(); await picker.getByRole('button', { name: 'Today', exact: true }).click(); await expect(deadline).toHaveValue('2027-01-15');
+  await page.getByRole('button', { name: 'Choose reschedule to', exact: true }).click(); const reschedule = page.getByRole('region', { name: 'Reschedule to calendar', exact: true }); await expect(reschedule).toContainText('January 2027');
+  await reschedule.getByRole('button', { name: '2027-01-21', exact: true }).click(); await expect(schedule).toHaveValue('2027-01-21'); await page.clock.runFor(1000); await saved(page);
+  expect((await disk()).tasks[0].versions.at(-1).scheduledDate).toBe('2026-10-09');
+  await page.getByRole('button', { name: 'Reschedule', exact: true }).click(); await page.clock.runFor(1000); await saved(page); expect((await disk()).tasks[0].versions.at(-1).scheduledDate).toBe('2027-01-21');
+});
+
+test('Calendar-linked Details preserve read-only time and student fields', async ({ page }) => {
+  const calendar = await app.calendar.read(); const id = crypto.randomUUID();
+  calendar.document.events.push({ id, title: 'Linked task', start: '2026-10-09T02:00:00.000Z', timeZone: 'Asia/Shanghai' }); await app.calendar.save(calendar);
+  await page.reload(); await page.getByRole('button', { name: 'Details', exact: true }).click();
+  await expect(page.getByLabel('Time', { exact: true })).toBeDisabled(); await expect(page.getByLabel('Student', { exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Deadline', { exact: true })).toBeEnabled(); await expect(work(page).getByRole('region', { name: 'Timing', exact: true })).toContainText('Change its time in Calendar');
+  await expect(work(page).getByRole('region', { name: 'Task settings', exact: true })).toContainText('Change this task’s student in Calendar');
+  await expect(page.getByRole('button', { name: 'Cancel task', exact: true })).toHaveCount(0);
 });
