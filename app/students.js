@@ -12,6 +12,7 @@ export class StudentWorkspace {
   constructor({ parent, api, notice, prepare, enter, navigate, schedule, entity = 'student', collection = 'students', validateDocument = validateStudent }) {
     Object.assign(this, { parent, api, notice, prepare, enter, navigate, schedule, entity, collection, validateDocument });
     this.editingSections = new Set(); this.openSessions = new Set(); this.historyQuery = ''; this.filter = 'active'; this.rosterQuery = ''; this.blocked = false;
+    this.rosterFilters = { group: '', schoolId: '', program: '', entryYear: '', stage: '' };
     window.addEventListener('pagehide', () => this.release());
     window.addEventListener('pageshow', e => { if (e.persisted && this.data) this.reclaim(); });
     window.addEventListener('focus', () => this.checkExternal());
@@ -186,7 +187,26 @@ export class StudentWorkspace {
     const controls = el('div', '', 'student-list-controls');
     const search = this.field('Search students', this.rosterQuery, value => { this.rosterQuery = value; this.drawCards(); }, 'search');
     controls.append(search, this.select('Show students', this.filter, [['active', 'Active'], ['archived', 'Archived'], ['all', 'All']], value => { this.filter = value; this.drawCards(); }));
-    this.cards = el('div', '', 'student-cards'); this.parent.replaceChildren(head, controls, this.cards); this.drawCards(); this.parent.append(this.makeTimetable());
+    this.rosterProfiles = new Map(this.studentDocuments.map(s => [s.id, s.profile]));
+    this.rosterGroups = new Map(this.studentDocuments.map(s => [s.id, new Set()]));
+    for (const group of this.groupDocuments) for (const id of group.memberIds) this.rosterGroups.get(id)?.add(group.id);
+    const filters = el('div', '', 'student-roster-filters');
+    const groups = [...this.groupDocuments].sort((a, b) => a.name.localeCompare(b.name)).map(g => [`value:${g.id}`, `${g.name}${g.archived ? ' (Archived)' : ''}`]);
+    const definitions = [['group', 'Group', groups], ['schoolId', 'School'], ['program', 'Degree / program'], ['entryYear', 'Entry year'], ['stage', 'Current study year']];
+    for (const [key, label, groupOptions] of definitions) {
+      const values = [...new Set(this.studentDocuments.map(s => key === 'stage' ? currentStage(s.profile.entryYear) : s.profile[key]).filter(Boolean))];
+      values.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      const options = [['', 'All'], ['missing', key === 'group' ? 'No group' : 'Unassigned'], ...(groupOptions || values.map(value => [`value:${value}`, value]))];
+      if (!options.some(([value]) => value === this.rosterFilters[key])) this.rosterFilters[key] = '';
+      filters.append(this.select(label, this.rosterFilters[key], options, value => { this.rosterFilters[key] = value; this.drawCards(); }));
+    }
+    filters.append(this.button('Clear filters', () => {
+      this.rosterQuery = ''; search.querySelector('input').value = '';
+      for (const key of Object.keys(this.rosterFilters)) this.rosterFilters[key] = '';
+      for (const select of filters.querySelectorAll('select')) select.value = '';
+      this.drawCards();
+    }));
+    this.cards = el('div', '', 'student-cards'); this.parent.replaceChildren(head, controls, filters, this.cards); this.drawCards(); this.parent.append(this.makeTimetable());
   }
   makeTimetable() {
     return timetablePanel({ academic: this.academic, students: this.studentDocuments, student: this.data, api: this.api, readOnly: this.readOnly, saveStudent: async timetables => {
@@ -196,7 +216,19 @@ export class StudentWorkspace {
   }
   drawCards() {
     const query = this.rosterQuery.toLocaleLowerCase();
-    const students = this.roster.filter(s => (this.filter === 'all' || s.archived === (this.filter === 'archived')) && `${s.name} ${s.researchAreas}`.toLocaleLowerCase().includes(query));
+    const students = this.roster.filter(s => {
+      if (!(this.filter === 'all' || s.archived === (this.filter === 'archived')) || !`${s.name} ${s.researchAreas}`.toLocaleLowerCase().includes(query)) return false;
+      const profile = this.rosterProfiles.get(s.id) || {};
+      return Object.entries(this.rosterFilters).every(([key, selected]) => {
+        if (!selected) return true;
+        if (key === 'group') {
+          const groups = this.rosterGroups.get(s.id);
+          return selected === 'missing' ? !groups?.size : groups?.has(selected.slice(6));
+        }
+        const value = (key === 'stage' ? currentStage(profile.entryYear) : profile[key]) || '';
+        return selected === 'missing' ? !value : selected === `value:${value}`;
+      });
+    });
     this.cards.replaceChildren(...students.map(s => {
       const card = el('a', '', 'student-card'); card.href = `?view=student&id=${s.id}`;
       card.onclick = e => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); this.navigate(s.id); };
@@ -205,7 +237,7 @@ export class StudentWorkspace {
       card.append(el('h2', s.name), el('small', s.schoolId || 'School unassigned'), el('p', s.researchAreas || 'Research area not yet set', 'student-muted'));
       const list = el('dl'); for (const [label, value] of [['Last meeting', s.lastMeeting || '—'], ['Next meeting', s.nextMeeting || 'Unscheduled'], ['Open actions', String(s.openActions)], ['Goal deadline', s.nearestDeadline || '—']]) list.append(el('dt', label), el('dd', value)); card.append(list); if (s.archived) card.append(el('span', 'Archived', 'student-badge')); return card;
     }));
-    if (!students.length) this.cards.append(el('p', 'No students here yet. Add a student or change your search.', 'student-empty'));
+    if (!students.length) this.cards.append(el('p', 'No students match your search or filters', 'student-empty'));
   }
   renderDetail() {
     const d = this.data;

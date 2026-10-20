@@ -129,7 +129,7 @@ test('add student accepts optional details; concise profile edits can be cancell
   await page.getByLabel('Student name', { exact: true }).fill('Full profile');
   await page.getByLabel('GK place (高考地)', { exact: true }).fill('四川');
   await page.getByLabel('Date of birth', { exact: true }).fill('2000-04');
-  await page.getByLabel('Entry year', { exact: true }).fill('2025');
+  await page.getByRole('dialog').getByLabel('Entry year', { exact: true }).fill('2025');
   await page.getByLabel('Email', { exact: true }).fill('full@example.com');
   await page.getByRole('button', { name: 'Create student', exact: true }).click(); await saved(page);
   await expect(page.locator('.topbar')).toBeHidden();
@@ -331,4 +331,78 @@ test('Chinese punctuation labels render bold in supervision previews without cha
   expect((await disk(page)).sessions[0].discussion.text).toBe(source);
   await page.reload();
   await expect(work(page).locator('.student-session strong')).toHaveText(['来源：', '现场修订：', '论文：', '技术澄清：']);
+});
+
+test('roster filters combine profile fields, current groups, search and archive status', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-20T04:00:00Z'));
+  const add = async (name, profile = {}, archived = false) => {
+    const item = await app.students.create({ name, profile });
+    item.document.archived = archived;
+    return (await app.students.save(item.document.id, item)).document.id;
+  };
+  const ada = await add('Ada Example', { schoolId: 'SYSU', program: 'PhD', entryYear: '2025', researchAreas: 'Robotics' });
+  const grace = await add('Grace Example', { schoolId: 'SUAT', program: 'MSc', entryYear: '2026' });
+  await add('Future Example', { schoolId: 'SYSU', program: 'PhD', entryYear: '2027' });
+  await add('Missing Example');
+  await add('Archived Example', { schoolId: 'SYSU', program: 'PhD', entryYear: '2025' }, true);
+  await app.groups.create({ name: 'Current Lab', memberIds: [ada, grace], leaderId: ada });
+  const oldGroup = await app.groups.create({ name: 'Former Lab', memberIds: [ada], leaderId: ada });
+  oldGroup.document.archived = true;
+  await app.groups.save(oldGroup.document.id, oldGroup);
+  await page.reload();
+  const filter = label => work(page).getByLabel(label, { exact: true });
+  const choose = (label, value) => filter(label).selectOption({ label: value });
+  const names = work(page).locator('.student-card h2');
+  const clear = () => work(page).getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await expect(names).toHaveCount(4);
+  const schoolOptions = await filter('School').locator('option').allTextContents();
+  await choose('Group', 'Current Lab'); await expect(names).toHaveText(['Ada Example', 'Grace Example']);
+  await choose('School', 'SYSU'); await expect(names).toHaveText(['Ada Example']);
+  await choose('Degree / program', 'PhD'); await choose('Entry year', '2025'); await choose('Current study year', 'Year 2');
+  await filter('Search students').fill('ROBOTICS'); await expect(names).toHaveText(['Ada Example']);
+  await expect(filter('School').locator('option')).toHaveText(schoolOptions);
+  await work(page).locator('.student-card').click();
+  await work(page).getByRole('button', { name: 'All students', exact: true }).click();
+  await expect(filter('Entry year')).toHaveValue('value:2025'); await expect(filter('Search students')).toHaveValue('ROBOTICS');
+  await choose('Current study year', 'Year 1'); await expect(names).toHaveCount(0);
+  await expect(work(page)).toContainText('No students match your search or filters');
+  await clear(); await expect(names).toHaveCount(4);
+  await expect(filter('Search students')).toHaveValue('');
+  await choose('Group', 'Former Lab (Archived)'); await expect(names).toHaveText(['Ada Example']);
+  await clear(); await choose('Group', 'No group'); await expect(names).toHaveText(['Future Example', 'Missing Example']);
+  await clear(); await choose('School', 'Unassigned'); await expect(names).toHaveText(['Missing Example']);
+  await clear(); await choose('Degree / program', 'Unassigned'); await expect(names).toHaveText(['Missing Example']);
+  await clear(); await choose('Entry year', 'Unassigned'); await expect(names).toHaveText(['Missing Example']);
+  await clear(); await choose('Current study year', 'Unassigned'); await expect(names).toHaveText(['Missing Example']);
+  await clear(); await choose('Current study year', 'Not started'); await expect(names).toHaveText(['Future Example']);
+  await clear(); await choose('Entry year', '2026'); await expect(names).toHaveText(['Grace Example']);
+  await clear(); await choose('Degree / program', 'MSc'); await expect(names).toHaveText(['Grace Example']);
+  await clear(); await filter('Search students').fill('PhD'); await expect(names).toHaveCount(0);
+  await clear(); await choose('Show students', 'Archived'); await choose('School', 'SYSU'); await clear();
+  await expect(filter('Show students')).toHaveValue('archived'); await expect(names).toHaveText(['Archived Example']);
+  await choose('Show students', 'All'); await choose('Entry year', '2025'); await expect(names).toHaveText(['Ada Example', 'Archived Example']);
+  await page.reload(); await expect(filter('Entry year')).toHaveValue(''); await expect(names).toHaveCount(4);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('#sidebar')).not.toBeInViewport();
+  await filter('Group').focus(); await page.keyboard.press('n'); await page.keyboard.press('Tab');
+  await expect(filter('Group')).toHaveValue('missing');
+  const bounds = await work(page).locator('.student-roster-filters').evaluate(node => {
+    const area = node.getBoundingClientRect();
+    return [...node.querySelectorAll('select, button')].every(child => { const rect = child.getBoundingClientRect(); return rect.left >= Math.max(0, area.left) && rect.right <= Math.min(innerWidth, area.right) + 1; });
+  });
+  expect(bounds).toBe(true);
+  await page.screenshot({ path: '/private/tmp/students-roster-filters-mobile.png', fullPage: true });
+});
+
+test('current study year filter follows September rollover independently of entry year', async ({ page }) => {
+  await app.students.create({ name: 'Cohort Example', profile: { entryYear: '2026' } });
+  await page.clock.setFixedTime(new Date('2027-08-31T04:00:00Z')); await page.reload();
+  await work(page).getByLabel('Entry year', { exact: true }).selectOption({ label: '2026' });
+  await work(page).getByLabel('Current study year', { exact: true }).selectOption({ label: 'Year 1' });
+  await expect(work(page).locator('.student-card h2')).toHaveText(['Cohort Example']);
+  await page.clock.setFixedTime(new Date('2027-09-01T04:00:00Z')); await page.reload();
+  await work(page).getByLabel('Entry year', { exact: true }).selectOption({ label: '2026' });
+  await work(page).getByLabel('Current study year', { exact: true }).selectOption({ label: 'Year 2' });
+  await expect(work(page).locator('.student-card h2')).toHaveText(['Cohort Example']);
+  await page.screenshot({ path: '/private/tmp/students-roster-filters-desktop.png', fullPage: true });
 });
