@@ -219,7 +219,7 @@ export async function createApp(root, { now = Date.now, appRoot = path.dirname(f
   const students = await new StudentStore(store).init();
   const faculty = await new FacultyStore(store).init();
   const groups = await new GroupStore(store, students).init();
-  const daily = await new DailyStore(store).init();
+  const daily = await new DailyStore(store, { now }).init();
   const calendar = await new CalendarStore(store).init();
   daily.calendar = calendar; daily.groups = groups; daily.faculty = faculty;
   const timetables = await new TimetableStore(store).init(); students.timetables = timetables;

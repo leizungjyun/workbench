@@ -115,7 +115,10 @@ export class DailyWorkspace {
   }
   patch(task, patch) { updateTask(task, this.date, patch); this.changed(); }
   transition(task, patch) { this.undo = { id: task.id, versions: clone(task.versions) }; this.patch(task, patch); if (patch.status === 'cancelled') { this.focusId = null; history.replaceState(null, '', this.url); } this.render(); }
+  isPriority({ state }) { return state.priority && state.status === 'open' && state.scheduledDate <= this.date; }
   render() {
+    const additions = this.renderedDocument === this.data && this.renderedDate === this.date ? [...this.parent.querySelectorAll('.daily-add')].map(input => [input.getAttribute('aria-label'), input.value]) : [];
+    this.renderedDocument = this.data; this.renderedDate = this.date;
     this.cardLayout?.destroy();
     const head = el('header', '', 'daily-heading'); head.append(el('div', 'DAILY · 日常', 'eyebrow'), el('h1', this.date));
     const nav = el('div', '', 'daily-actions'); nav.append(this.button('Previous day', () => this.navigate(shiftDate(this.date, -1))), this.button('Today', () => this.navigate(localDate())), this.button('Next day', () => this.navigate(shiftDate(this.date, 1))));
@@ -125,13 +128,13 @@ export class DailyWorkspace {
     if (this.readOnly) statusRow.append(this.button('Claim editing', () => this.claim()));
     this.conflictBar = el('div', '', 'daily-conflict'); this.conflictBar.append(el('p', 'Your draft is preserved. Compare it with disk before choosing which version to keep.'), this.button('Compare', () => this.compare()), this.button('Reload disk version', async () => { if (!confirm('Discard the Daily draft and load the disk version?')) return; const latest = await this.api('/api/daily'); localStorage.removeItem(this.draftKey()); this.load(latest); this.undo = null; this.render(); }, true), this.button('Overwrite with draft', async () => this.compare(true), true));
     const body = el('div', '', 'daily-groups'); const rows = this.dayRows();
-    const categories = this.data.categories.filter(c => !c.hidden || rows.some(r => r.state.categoryId === c.id));
+    const categories = this.data.categories.filter(c => !c.hidden || rows.some(r => r.state.categoryId === c.id && !this.isPriority(r)));
     for (const category of categories) {
       const section = el('section', '', 'daily-group'); section.append(el('h2', category.name));
-      for (const row of rows.filter(r => r.state.categoryId === category.id)) section.append(this.taskRow(row));
+      for (const row of rows.filter(r => r.state.categoryId === category.id && !this.isPriority(r))) section.append(this.taskRow(row));
       if (!category.hidden) {
         const input = el('input', '', 'daily-add'); input.placeholder = 'Add a task…'; input.setAttribute('aria-label', `Add task to ${category.name}`); input.disabled = this.readOnly;
-        input.onkeydown = e => { if (e.key === 'Enter' && input.value.trim()) { e.preventDefault(); this.data.tasks.push(newTask(crypto.randomUUID(), this.date, input.value, category.id)); this.changed(); this.render(); [...this.parent.querySelectorAll('.daily-add')].find(n => n.getAttribute('aria-label') === input.getAttribute('aria-label'))?.focus(); } }; section.append(input);
+        input.onkeydown = e => { if (e.key === 'Enter' && input.value.trim()) { e.preventDefault(); this.data.tasks.push(newTask(crypto.randomUUID(), this.date, input.value, category.id)); input.value = ''; this.changed(); this.render(); [...this.parent.querySelectorAll('.daily-add')].find(n => n.getAttribute('aria-label') === input.getAttribute('aria-label'))?.focus(); } }; section.append(input);
       }
       body.append(section);
     }
@@ -140,6 +143,8 @@ export class DailyWorkspace {
     if (this.undo) this.parent.append(this.button('Undo task change', () => { const task = this.data.tasks.find(t => t.id === this.undo.id); if (task) task.versions = this.undo.versions; this.undo = null; this.changed(); this.render(); }, true));
     const layout = el('div', '', 'daily-layout'), editor = el('div', '', 'daily-editor');
     this.dayPreview = el('aside', '', 'daily-day-preview'); this.dayPreview.setAttribute('aria-label', 'Day preview');
+    const priorities = rows.filter(row => this.isPriority(row));
+    if (priorities.length) { const section = el('section', '', 'daily-group daily-priority'); section.setAttribute('aria-label', 'Priority tasks'); section.append(el('h2', 'Priority')); for (const row of priorities) section.append(this.taskRow(row)); editor.append(section); }
     editor.append(notes, body); layout.append(editor, this.dayPreview); this.parent.append(layout);
     const inactive = this.data.tasks.filter(t => { const state = t.versions.filter(v => v.date <= this.date).at(-1); return state && state.status !== 'open' && !rows.some(r => r.task.id === t.id); });
     if (inactive.length) {
@@ -149,6 +154,7 @@ export class DailyWorkspace {
     }
     this.cardLayout = new DailyCardLayout(body);
     this.updateDayPreview(); this.updateStatus();
+    for (const [label, value] of additions) { const input = [...this.parent.querySelectorAll('.daily-add')].find(n => n.getAttribute('aria-label') === label); if (input) input.value = value; }
   }
   dayRows() {
     const rows = visibleTasks(this.data, this.date).filter(row => row.state.status !== 'cancelled');
@@ -164,15 +170,20 @@ export class DailyWorkspace {
     if (!this.data || !this.dayPreview?.isConnected) return;
     const rows = this.dayRows().filter(row => row.state.status !== 'cancelled');
     this.dayPreview.replaceChildren(el('h2', 'Day preview'), el('p', this.date, 'daily-muted'), el('p', `${rows.filter(row => row.state.status === 'completed').length} / ${rows.length} completed`, 'daily-preview-progress'));
-    const notes = this.data.days[this.date]?.notes;
-    if (notes) { const section = el('section'); section.append(el('h3', 'Daily notes')); const rich = el('div', '', 'daily-preview-rich'); renderMarkdown(rich, notes); section.append(rich); this.dayPreview.append(section); }
-    for (const category of this.data.categories) {
-      const items = rows.filter(row => row.state.categoryId === category.id); if (!items.length) continue;
-      const section = el('section', '', 'daily-preview-category'); section.append(el('h3', category.name));
+    let notesAdded = false;
+    const appendNotes = () => {
+      const notes = this.data.days[this.date]?.notes;
+      if (notes) { const section = el('section'); section.append(el('h3', 'Daily notes')); const rich = el('div', '', 'daily-preview-rich'); renderMarkdown(rich, notes); section.append(rich); this.dayPreview.append(section); }
+    };
+    const groups = [{ name: 'Priority', priority: true, items: rows.filter(row => this.isPriority(row)) }, ...this.data.categories.map(category => ({ ...category, items: rows.filter(row => row.state.categoryId === category.id && !this.isPriority(row)) }))];
+    for (const group of groups) {
+      if (!group.priority && !notesAdded) { appendNotes(); notesAdded = true; }
+      const items = group.items; if (!items.length) continue;
+      const section = el('section', '', `daily-preview-category${group.priority ? ' daily-preview-priority' : ''}`); section.append(el('h3', group.name));
       for (const { task, state } of items) {
         const item = el('article', '', `daily-preview-task ${state.status}`);
-        const title = el('p', '', 'daily-preview-title'); title.append(el('span', state.status === 'completed' ? '✓ ' : '○ '), el('span', state.text)); item.append(title);
-        const metadata = [state.time, state.deadline && `Due ${state.deadline}`, state.scheduledDate > this.date && `Scheduled ${state.scheduledDate}`, task.originDate < this.date && `From ${task.originDate}`, state.studentId && (this.roster.find(student => student.id === state.studentId)?.name || 'Linked student')].filter(Boolean);
+        const title = el('p', '', 'daily-preview-title'); title.append(el('span', state.priority ? '★ ' : state.status === 'completed' ? '✓ ' : '○ '), el('span', state.text)); item.append(title);
+        const metadata = [group.priority && (this.data.categories.find(c => c.id === state.categoryId)?.name || 'Miscellaneous'), state.time, state.deadline && `Due ${state.deadline}`, state.scheduledDate > this.date && `Scheduled ${state.scheduledDate}`, task.originDate < this.date && `From ${task.originDate}`, state.studentId && (this.roster.find(student => student.id === state.studentId)?.name || 'Linked student')].filter(Boolean);
         if (metadata.length) item.append(el('p', metadata.join(' · '), 'daily-muted'));
         const navigation = this.recordActions(task, state); if (navigation) item.append(navigation);
         if (state.details) { const rich = el('div', '', 'daily-preview-rich'); renderMarkdown(rich, state.details); item.append(rich); }
@@ -181,6 +192,7 @@ export class DailyWorkspace {
       }
       this.dayPreview.append(section);
     }
+    if (!notesAdded) appendNotes();
     if (!rows.length) this.dayPreview.append(el('p', 'No tasks for this day.', 'daily-muted'));
   }
   recordActions(task, state) {
@@ -193,17 +205,21 @@ export class DailyWorkspace {
   }
   taskRow({ task, state }) {
     const expanded = this.expanded.has(task.id);
-    const row = el('article', '', `daily-task ${state.status}${expanded ? ' daily-task-expanded' : ''}`); row.dataset.task = task.id;
+    const row = el('article', '', `daily-task ${state.status}${state.priority ? ' daily-task-priority' : ''}${expanded ? ' daily-task-expanded' : ''}`); row.dataset.task = task.id;
     const top = el('div', '', 'daily-task-line'); const checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.checked = state.status === 'completed'; checkbox.disabled = this.readOnly; checkbox.setAttribute('aria-label', `Complete ${state.text}`); checkbox.onchange = () => this.transition(task, { status: checkbox.checked ? 'completed' : 'open', scheduledDate: this.date });
     const title = this.field('Task', state.text, value => { if (value.trim()) { this.patch(task, { text: value }); checkbox.setAttribute('aria-label', `Complete ${value}`); } }); title.classList.add('daily-task-title'); const toggle = this.button(expanded ? 'Hide details' : 'Details', () => { if (expanded) this.expanded.delete(task.id); else this.expanded.add(task.id); this.render(); const next = [...this.parent.querySelectorAll('[data-task]')].find(n => n.dataset.task === task.id); next?.querySelector('.daily-details-toggle')?.focus(); });
+    const priority = this.button(state.priority ? 'Unmark priority' : 'Mark priority', () => { this.patch(task, { priority: !state.priority }); this.render(); this.parent.querySelector(`[data-task="${task.id}"] .daily-priority-toggle`)?.focus(); }, true);
+    priority.setAttribute('aria-pressed', String(!!state.priority));
     const remove = this.button('Remove', () => this.transition(task, { status: 'cancelled', scheduledDate: this.date }), true);
-    for (const [button, glyph, cls] of [[toggle, 'chevronDown', 'daily-details-toggle'], [remove, 'trash', 'daily-remove']]) {
+    for (const [button, glyph, cls] of [[priority, 'star', 'daily-priority-toggle'], [toggle, 'chevronDown', 'daily-details-toggle'], [remove, 'trash', 'daily-remove']]) {
       button.title = button.textContent; button.setAttribute('aria-label', button.textContent); button.replaceChildren(this.icon(glyph)); button.className = `daily-icon-button ${cls}`;
     }
     toggle.setAttribute('aria-expanded', String(expanded)); toggle.setAttribute('aria-controls', `daily-details-${task.id}`);
-    top.append(checkbox, title, toggle, remove); row.append(top);
+    top.append(checkbox, title, priority, toggle, remove); row.append(top);
     const latest = task.versions.at(-1); const meta = el('div', '', 'daily-muted');
-    meta.textContent = `${task.originDate < this.date ? `From ${task.originDate} · ` : ''}${state.status}${state.scheduledDate > this.date ? ` · Scheduled ${state.scheduledDate}` : ''}${state.time ? ` · ${state.time}` : ''}${state.deadline ? ` · Due ${state.deadline}` : ''}${latest.date > this.date ? ` · Later ${latest.status} on ${latest.date}` : ''}`; row.append(meta);
+    meta.textContent = `${task.originDate < this.date ? `From ${task.originDate} · ` : ''}${state.status}${state.scheduledDate > this.date ? ` · Scheduled ${state.scheduledDate}` : ''}${state.time ? ` · ${state.time}` : ''}${state.deadline ? ` · Due ${state.deadline}` : ''}${latest.date > this.date ? ` · Later ${latest.status} on ${latest.date}` : ''}`;
+    if (this.isPriority({ state })) { const category = el('span', this.data.categories.find(c => c.id === state.categoryId)?.name || 'Miscellaneous', 'daily-priority-category'); row.append(category); }
+    row.append(meta);
     const navigation = this.recordActions(task, state); if (navigation) row.append(navigation);
     const event = this.calendar?.events.find(e => e.id === task.id && e.studentId);
     if (event) {

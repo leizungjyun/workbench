@@ -42,7 +42,7 @@ test('Daily cards and preview use matching icons for every source; Calendar puts
   await daily(page).evaluate(n => { n.scrollTop = 0; }); await page.screenshot({ path: '/private/tmp/workbench-record-icons-daily-desktop.png', animations: 'disabled' });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(daily(page).getByRole('link', { name: 'Open student', exact: true })).toHaveCount(2);
-  expect(await daily(page).evaluate(n => n.scrollWidth <= n.clientWidth)).toBe(true);
+  await expect.poll(() => daily(page).evaluate(n => n.scrollWidth <= n.clientWidth)).toBe(true);
   for (const link of await taskRow(page, records[0].id).locator('.record-icon-link').all()) { const bounds = await link.boundingBox(); expect(bounds.width).toBeGreaterThanOrEqual(40); expect(bounds.height).toBeGreaterThanOrEqual(40); }
   await page.screenshot({ path: '/private/tmp/workbench-record-icons-daily-mobile.png', animations: 'disabled' });
   await page.goto(base + '/?view=calendar&date=2026-10-20');

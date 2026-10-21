@@ -63,3 +63,14 @@
 .daily-date-grid button[aria-pressed=true] {background:#365743;color:white;border-color:#365743;}.daily-date-grid button[aria-current=date] {box-shadow:inset 0 0 0 1px #51755a;}
 .daily-date-picker .daily-actions {gap:6px;}.daily-date-picker .daily-actions button {font-size:11px;padding:6px;}
 @media(max-width:600px) {.daily-workspace .daily-icon-button {width:40px;height:40px;}}
+
+.daily-priority { margin-bottom: 20px; border-color: #d8c991; background: #fffdf3; }
+.daily-priority > h2 { color: #79622c; }
+.daily-priority-category { display: inline-block; font-size: 11px; color: #79622c; background: #f1ead2; border-radius: 4px; padding: 3px 7px; margin-top: 7px; }
+.daily-workspace .daily-priority-toggle[aria-pressed=true] { color: #937021; }
+.daily-priority-toggle[aria-pressed=true] svg { fill: #f1dfa2; }
+.daily-preview-priority > h3 { color: #79622c; }
+@media (hover: hover) and (pointer: fine) {
+  .daily-task .daily-remove { opacity: 0; }
+  .daily-task:hover .daily-remove, .daily-task:focus-within .daily-remove { opacity: 1; }
+}

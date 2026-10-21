@@ -111,3 +111,34 @@ test('legacy uncategorized tasks merge into Miscellaneous without losing version
   const renamed = newDaily(randomUUID()); renamed.categories[5].name = 'Personal'; renamed.tasks.push(newTask(randomUUID(), '2026-10-09', 'Legacy', ''));
   normalizeDaily(renamed); assert.equal(renamed.tasks[0].versions[0].categoryId, 'category-5'); assert.equal(renamed.categories.length, 6);
 });
+
+test('priority defaults are compatible with legacy snapshots and reject non-booleans', () => {
+  const doc = newDaily(randomUUID()), item = task(); doc.tasks.push(item); assert.equal(item.versions[0].priority, false);
+  delete item.versions[0].priority; const legacy = JSON.stringify(doc); validateDaily(doc); normalizeDaily(doc); assert.equal(JSON.stringify(doc), legacy);
+  for (const value of [null, 1, 'high', [], {}]) { item.versions[0].priority = value; assert.throws(() => validateDaily(doc), /priority/); }
+  item.versions[0].priority = true; validateDaily(doc); assert.match(markdownExport(doc), /\[Priority\] Read paper/);
+});
+test('priority edits carry into later snapshots without changing earlier history or unrelated fields', () => {
+  const item = task(); updateTask(item, '2026-10-11', { text: 'Later title', deadline: '2026-10-20' }); updateTask(item, '2026-10-15', { scheduledDate: '2026-10-17' });
+  updateTask(item, '2026-10-10', { priority: true }); assert.equal(stateAt(item, '2026-10-09').priority, false);
+  for (const date of ['2026-10-10', '2026-10-11', '2026-10-15', '2026-10-19']) assert.equal(stateAt(item, date).priority, true);
+  assert.equal(stateAt(item, '2026-10-15').scheduledDate, '2026-10-17'); assert.equal(stateAt(item, '2026-10-11').text, 'Later title');
+  updateTask(item, '2026-10-12', { priority: false }); assert.equal(stateAt(item, '2026-10-11').priority, true); assert.equal(stateAt(item, '2026-10-15').priority, false);
+  updateTask(item, '2026-10-17', { priority: true, status: 'completed' }); updateTask(item, '2026-10-18', { status: 'open' }); assert.equal(stateAt(item, '2026-10-18').priority, true);
+});
+test('Calendar synchronization preserves priority across rescheduling, deletion, and restoration', async () => {
+  const { syncCalendarTasks } = await import('../daily-calendar.js'); const doc = newDaily(randomUUID()); const calendar = { events: [{ id: randomUUID(), title: 'Synthetic booking', start: '2026-10-09T02:00:00.000Z', durationMinutes: 30, timeZone: 'Asia/Shanghai' }] };
+  syncCalendarTasks(doc, calendar, new Date('2026-10-09T00:00Z')); updateTask(doc.tasks[0], '2026-10-09', { priority: true }); const original = structuredClone(calendar.events[0]);
+  calendar.events[0].start = '2026-10-11T02:00:00.000Z'; syncCalendarTasks(doc, calendar, new Date('2026-10-10T00:00Z')); assert.equal(doc.tasks[0].versions.at(-1).priority, true);
+  calendar.events = []; syncCalendarTasks(doc, calendar, new Date('2026-10-10T00:00Z')); assert.equal(doc.tasks[0].versions.at(-1).priority, true);
+  calendar.events = [original]; syncCalendarTasks(doc, calendar, new Date('2026-10-10T00:00Z')); assert.equal(doc.tasks[0].versions.at(-1).priority, true); assert.equal(doc.tasks[0].versions.at(-1).status, 'open');
+});
+test('priority survives storage, revisions, and both exports', async t => {
+  const { daily } = await fixture(t); let saved = await daily.read(); saved.document.tasks.push(task()); const original = structuredClone(saved); updateTask(saved.document.tasks[0], '2026-10-09', { priority: true }); saved = await daily.save(saved);
+  await assert.rejects(daily.save(original), { status: 409 }); assert.equal((await daily.read()).document.tasks[0].versions[0].priority, true); assert.equal((await daily.export()).document.tasks[0].versions[0].priority, true); assert.match((await daily.export('markdown')).content, /\[Priority\]/);
+});
+test('Calendar reconciliation uses the app clock for dated snapshots', async t => {
+  const { root } = await fixture(t); const app = await createApp(root, { now: () => Date.parse('2026-10-10T00:00:00Z') }); t.after(async () => { await app.terminals.close(); await app.kernels.close(); });
+  let calendar = await app.calendar.read(); calendar.document.events.push({ id: randomUUID(), title: 'Synthetic future booking', start: '2026-10-20T02:00:00.000Z', durationMinutes: 30, timeZone: 'Asia/Shanghai' }); await app.calendar.save(calendar); await app.daily.read();
+  calendar = await app.calendar.read(); calendar.document.events[0].location = 'Synthetic room'; await app.calendar.save(calendar); const daily = await app.daily.read(); assert.deepEqual(daily.document.tasks[0].versions.map(v => v.date), ['2026-10-20']);
+});

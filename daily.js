@@ -7,7 +7,7 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
 
 export class DailyStore {
-  constructor(notebooks) { this.notebooks = notebooks; }
+  constructor(notebooks, { now = Date.now } = {}) { this.notebooks = notebooks; this.now = now; }
   async safe(...parts) {
     let file = this.notebooks.stateDir;
     for (const part of ['', 'daily', ...parts]) { file = path.join(file, part); try { if ((await fs.lstat(file)).isSymbolicLink()) fail(400, 'Daily storage cannot contain symlinks.'); } catch (e) { if (e.code !== 'ENOENT') throw e; } }
@@ -32,7 +32,7 @@ export class DailyStore {
       document.categories.push({ id: 'category-group', name: 'Group', hidden: false }); changed = true;
     }
     if (this.faculty && !document.categories.some(c => c.id === 'category-faculty') && (await this.faculty.list()).faculty.length) { document.categories.push({ id: 'category-faculty', name: 'Faculty', hidden: false }); changed = true; }
-    if (this.calendar) changed = syncCalendarTasks(document, (await this.calendar.read()).document) || changed;
+    if (this.calendar) changed = syncCalendarTasks(document, (await this.calendar.read()).document, new Date(this.now())) || changed;
     if (changed) return this.write(previous, document);
     return previous;
   }

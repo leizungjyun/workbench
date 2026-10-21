@@ -11,7 +11,7 @@ export function localDate(d = new Date()) { return `${d.getFullYear()}-${String(
 export function shiftDate(date, days) { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() + days); return localDate(d); }
 export function newDaily(id) { return { schemaVersion: 1, id, categories: defaultCategories.map((name, i) => ({ id: `category-${i}`, name, hidden: false })), tasks: [], days: {}, imports: [] }; }
 export function newTask(id, date, text, categoryId = 'category-5') {
-  return { id, originDate: date, appearances: [date], versions: [{ date, text: text.trim(), categoryId, details: '', subtasks: [], time: '', deadline: '', studentId: '', status: 'open', scheduledDate: date }] };
+  return { id, originDate: date, appearances: [date], versions: [{ date, text: text.trim(), categoryId, details: '', subtasks: [], time: '', deadline: '', studentId: '', status: 'open', priority: false, scheduledDate: date }] };
 }
 // Empty category IDs from older files belong to the miscellaneous category.
 export function normalizeDaily(doc) {
@@ -36,6 +36,8 @@ export function updateTask(task, date, patch) {
   const index = task.versions.findIndex(v => v.date === date);
   if (index < 0) task.versions.push(next); else task.versions[index] = next;
   task.versions.sort((a, b) => a.date.localeCompare(b.date));
+  // Priority changes carry forward without rewriting earlier history.
+  if (Object.hasOwn(patch, 'priority')) for (const version of task.versions) if (version.date > date) version.priority = patch.priority;
 }
 export function validateDaily(doc) {
   const obj = o => { if (!o || typeof o !== 'object' || Array.isArray(o)) invalid('Invalid Daily record.'); };
@@ -61,6 +63,7 @@ export function validateDaily(doc) {
       obj(v); date(v.date); if (v.date <= previous) invalid('Task history must have unique ordered dates.'); previous = v.date;
       str(v.text, 10000); str(v.details); if (!v.text.trim()) invalid('Blank tasks cannot be saved.');
       if (!categories.has(v.categoryId) || !['open', 'completed', 'cancelled'].includes(v.status)) invalid('Invalid task category or status.');
+      if (v.priority !== undefined && typeof v.priority !== 'boolean') invalid('Invalid task priority.');
       str(v.time, 5); if (v.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v.time)) invalid('Invalid task time.');
       if (v.facultyId && (v.studentId || v.groupId)) invalid('Faculty links cannot be mixed with Student or Group links.');
       optionalDate(v.deadline); date(v.scheduledDate); str(v.studentId, 100); if (v.studentId && !uuid.test(v.studentId)) invalid('Invalid student link.');
@@ -81,7 +84,7 @@ export function markdownExport(doc) {
     const lines = [`# ${date}`, '']; let category;
     for (const { task, state } of visibleTasks(doc, date).sort((a, b) => a.state.categoryId.localeCompare(b.state.categoryId))) {
       if (category !== state.categoryId) { category = state.categoryId; lines.push(`## ${doc.categories.find(c => c.id === category)?.name || 'Miscellaneous'}`, ''); }
-      lines.push(`- [${state.status === 'completed' ? 'x' : ' '}] ${state.text}${state.status === 'cancelled' ? ' (cancelled)' : ''}`, `  Origin: ${task.originDate}${state.deadline ? ` · Deadline: ${state.deadline}` : ''}${state.time ? ` · Time: ${state.time}` : ''}`);
+      lines.push(`- [${state.status === 'completed' ? 'x' : ' '}] ${state.priority ? '[Priority] ' : ''}${state.text}${state.status === 'cancelled' ? ' (cancelled)' : ''}`, `  Origin: ${task.originDate}${state.deadline ? ` · Deadline: ${state.deadline}` : ''}${state.time ? ` · Time: ${state.time}` : ''}`);
       if (state.details) lines.push(...state.details.split('\n').map(l => `  ${l}`));
       for (const s of state.subtasks) lines.push(`  - [${s.done ? 'x' : ' '}] ${s.text}`);
     }
